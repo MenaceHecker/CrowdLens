@@ -1,1 +1,1 @@
-Mono Repo File Structure for CrowdLens
+Mono Repo File Structure for CrowdLens, a distributed human sensor network + AI intelligence layer
