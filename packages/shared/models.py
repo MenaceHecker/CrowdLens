@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Any, Optional, Literal
+from typing import Any, Optional, Literal, Dict
 from datetime import datetime
 
 ReportStatus = Literal["submitted", "queued", "processing", "ready", "failed"]
