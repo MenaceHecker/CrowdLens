@@ -2,24 +2,35 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
-from packages.shared.models import CreateReportRequest, Report
+from packages.shared.models import (
+    CreateReportRequest,
+    Report,
+    Job,
+    NextJobRequest,
+    JobResultRequest,
+)
 from packages.core.config import settings
 from packages.core.logging import setup_logging
+from apps.api.src.job_queue import InMemoryJobQueue
+
 
 setup_logging(service="api", level=settings.LOG_LEVEL)
 logger = logging.getLogger("api")
 
 app = FastAPI(title="CrowdLens API", version="0.1.0")
 
-# Option A local dev store (temporary)
+# Option A local dev stores 
 REPORTS: dict[str, Report] = {}
+JOB_QUEUE = InMemoryJobQueue()
+
 
 @app.middleware("http")
 async def request_logging(request: Request, call_next):
     start = datetime.now(timezone.utc)
+    response = None
     try:
         response = await call_next(request)
         return response
@@ -35,10 +46,12 @@ async def request_logging(request: Request, call_next):
             },
         )
 
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("unhandled_exception", extra={"path": request.url.path})
     return JSONResponse(status_code=500, content={"error": "internal_error"})
+
 
 @app.get("/healthz")
 def healthz():
@@ -49,19 +62,92 @@ def healthz():
         "time": datetime.now(timezone.utc).isoformat(),
     }
 
+
 @app.post("/reports", response_model=Report)
 def create_report(payload: CreateReportRequest):
+    # Create report
     rid = str(uuid4())
+    user_id = "local-dev-user"
+
     report = Report(
         id=rid,
-        user_id="local-dev-user",
+        user_id=user_id,
         text=payload.text,
         location=payload.location,
         occurred_at=payload.occurred_at,
         created_at=datetime.now(timezone.utc),
-        status="submitted",
+        status="queued",  # queued because we immediately enqueue a job
         media_url=payload.media_url,
     )
     REPORTS[rid] = report
-    logger.info("report_created", extra={"report_id": rid})
+
+    # Enqueue job
+    job = JOB_QUEUE.enqueue_report_created(report_id=rid, user_id=user_id)
+    logger.info("job_enqueued", extra={"job_id": job.id, "type": job.type, "report_id": rid})
+
+    return report
+
+
+@app.get("/jobs", response_model=list[Job])
+def list_jobs():
+    return JOB_QUEUE.list_jobs()
+
+
+@app.post("/jobs/next", response_model=Job)
+def get_next_job(req: NextJobRequest):
+    job = JOB_QUEUE.next_job()
+    if not job:
+        raise HTTPException(status_code=204, detail="no_jobs")
+    logger.info("job_claimed", extra={"job_id": job.id, "worker_id": req.worker_id})
+    return job
+
+
+@app.post("/jobs/{job_id}/complete", response_model=Job)
+def complete_job(job_id: str, req: JobResultRequest):
+    job = JOB_QUEUE.complete(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job_not_found")
+
+    # Update report status to ready 
+    if job.type == "report_created":
+        report_id = job.payload.report_id
+        report = REPORTS.get(report_id)
+        if report:
+            report.status = "ready"
+            REPORTS[report_id] = report
+
+    logger.info(
+        "job_completed",
+        extra={"job_id": job.id, "worker_id": req.worker_id, "ok": req.ok},
+    )
+    return job
+
+
+@app.post("/jobs/{job_id}/fail", response_model=Job)
+def fail_job(job_id: str, req: JobResultRequest):
+    job = JOB_QUEUE.fail(job_id, error=req.error or "unknown_error")
+    if not job:
+        raise HTTPException(status_code=404, detail="job_not_found")
+
+    # Mark report failed 
+    if job.type == "report_created":
+        report_id = job.payload.report_id
+        report = REPORTS.get(report_id)
+        if report:
+            report.status = "failed"
+            REPORTS[report_id] = report
+
+    logger.info(
+        "job_failed",
+        extra={"job_id": job.id, "worker_id": req.worker_id, "error": job.error},
+    )
+    return job
+
+
+# quick debug endpoint to see a report
+@app.get("/reports/{report_id}", response_model=Report)
+def get_report(report_id: str):
+    report = REPORTS.get(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="report_not_found")
     return report
