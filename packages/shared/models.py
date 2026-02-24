@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Any, Optional, Literal, Dict
+from typing import Any, Optional, Literal, Dict, List
 from datetime import datetime
 
 ReportStatus = Literal["submitted", "queued", "processing", "ready", "failed"]
@@ -52,3 +52,31 @@ class JobResultRequest(BaseModel):
     ok: bool = True
     error: Optional[str] = None
     output: Optional[Dict[str, Any]] = None
+
+EventStatus = Literal["forming", "active", "resolved"]
+
+
+class Event(BaseModel):
+    id: str
+    status: EventStatus
+    created_at: datetime
+    updated_at: datetime
+
+    # Simple local clustering representation
+    cell_id: str
+    centroid: LatLng
+
+    # Report linkage + stats
+    report_ids: List[str] = Field(default_factory=list)
+    report_count: int = 0
+
+    # Stubs for later ML output
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    severity: int = Field(default=1, ge=1, le=5)
+    title: str = "Situation forming"
+    briefing: Optional[dict] = None  # later Gemini structured JSON
+
+
+class FeedItem(BaseModel):
+    event: Event
+    latest_report_id: Optional[str] = None
