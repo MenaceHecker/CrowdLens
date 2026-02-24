@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"     # DEBUG | INFO | WARNING | ERROR
     SERVICE_NAME: str = "crowdlens"
 
-    # Ports mainly for docs and uvicorn uses CLI flag
+    # Ports declared for docs and uvicorn uses CLI flag
     API_PORT: int = 8000
     WORKER_PORT: int = 8001
 
