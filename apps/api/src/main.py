@@ -11,10 +11,13 @@ from packages.shared.models import (
     Job,
     NextJobRequest,
     JobResultRequest,
+    FeedItem,
+    Event,
 )
 from packages.core.config import settings
 from packages.core.logging import setup_logging
 from apps.api.src.job_queue import InMemoryJobQueue
+from apps.api.src.events import InMemoryEventStore
 
 
 setup_logging(service="api", level=settings.LOG_LEVEL)
@@ -22,9 +25,12 @@ logger = logging.getLogger("api")
 
 app = FastAPI(title="CrowdLens API", version="0.1.0")
 
-# Option A local dev stores 
 REPORTS: dict[str, Report] = {}
 JOB_QUEUE = InMemoryJobQueue()
+EVENTS = InMemoryEventStore()
+
+# report_id -> event_id mapping (local)
+REPORT_TO_EVENT: dict[str, str] = {}
 
 
 @app.middleware("http")
@@ -65,7 +71,6 @@ def healthz():
 
 @app.post("/reports", response_model=Report)
 def create_report(payload: CreateReportRequest):
-    # Create report
     rid = str(uuid4())
     user_id = "local-dev-user"
 
@@ -76,17 +81,25 @@ def create_report(payload: CreateReportRequest):
         location=payload.location,
         occurred_at=payload.occurred_at,
         created_at=datetime.now(timezone.utc),
-        status="queued",  # queued because we immediately enqueue a job
+        status="queued",
         media_url=payload.media_url,
     )
     REPORTS[rid] = report
 
-    # Enqueue job
     job = JOB_QUEUE.enqueue_report_created(report_id=rid, user_id=user_id)
     logger.info("job_enqueued", extra={"job_id": job.id, "type": job.type, "report_id": rid})
-
     return report
 
+
+@app.get("/reports/{report_id}", response_model=Report)
+def get_report(report_id: str):
+    report = REPORTS.get(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="report_not_found")
+    return report
+
+
+# -------- Local Job Queue Endpoints (Option A) --------
 
 @app.get("/jobs", response_model=list[Job])
 def list_jobs():
@@ -108,18 +121,27 @@ def complete_job(job_id: str, req: JobResultRequest):
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
 
-    # Update report status to ready 
+    # Stub processing output: job creates/updates an event
     if job.type == "report_created":
         report_id = job.payload.report_id
         report = REPORTS.get(report_id)
         if report:
+            report.status = "processing"
+            REPORTS[report_id] = report
+
+            event, created = EVENTS.upsert_from_report(report, REPORTS)
+            REPORT_TO_EVENT[report_id] = event.id
+
+            # finalize report as ready 
             report.status = "ready"
             REPORTS[report_id] = report
 
-    logger.info(
-        "job_completed",
-        extra={"job_id": job.id, "worker_id": req.worker_id, "ok": req.ok},
-    )
+            logger.info(
+                "event_upserted",
+                extra={"event_id": event.id, "created": created, "report_id": report_id, "cell": event.cell_id},
+            )
+
+    logger.info("job_completed", extra={"job_id": job.id, "worker_id": req.worker_id, "ok": req.ok})
     return job
 
 
@@ -129,7 +151,6 @@ def fail_job(job_id: str, req: JobResultRequest):
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
 
-    # Mark report failed 
     if job.type == "report_created":
         report_id = job.payload.report_id
         report = REPORTS.get(report_id)
@@ -137,17 +158,25 @@ def fail_job(job_id: str, req: JobResultRequest):
             report.status = "failed"
             REPORTS[report_id] = report
 
-    logger.info(
-        "job_failed",
-        extra={"job_id": job.id, "worker_id": req.worker_id, "error": job.error},
-    )
+    logger.info("job_failed", extra={"job_id": job.id, "worker_id": req.worker_id, "error": job.error})
     return job
 
 
-# quick debug endpoint to see a report
-@app.get("/reports/{report_id}", response_model=Report)
-def get_report(report_id: str):
-    report = REPORTS.get(report_id)
-    if not report:
-        raise HTTPException(status_code=404, detail="report_not_found")
-    return report
+# -------- Events + Feed --------
+
+@app.get("/feed", response_model=list[FeedItem])
+def get_feed():
+    events = EVENTS.list_active()
+    items: list[FeedItem] = []
+    for e in events:
+        latest_report_id = e.report_ids[-1] if e.report_ids else None
+        items.append(FeedItem(event=e, latest_report_id=latest_report_id))
+    return items
+
+
+@app.get("/events/{event_id}", response_model=Event)
+def get_event(event_id: str):
+    event = EVENTS.get(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="event_not_found")
+    return event
