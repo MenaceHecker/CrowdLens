@@ -1,8 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from uuid import uuid4
-
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 
 from packages.shared.models import (
@@ -31,6 +30,15 @@ EVENTS = InMemoryEventStore()
 
 # report_id -> event_id mapping (local)
 REPORT_TO_EVENT: dict[str, str] = {}
+
+@app.post("/jobs/next", response_model=Job)
+def get_next_job(req: NextJobRequest):
+    job = JOB_QUEUE.next_job()
+    if not job:
+        return Response(status_code=204)
+
+    logger.info("job_claimed", extra={"job_id": job.id, "worker_id": req.worker_id})
+    return job
 
 
 @app.middleware("http")
@@ -121,25 +129,38 @@ def complete_job(job_id: str, req: JobResultRequest):
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
 
-    # Stub processing output: job creates/updates an event
-    if job.type == "report_created":
-        report_id = job.payload.report_id
-        report = REPORTS.get(report_id)
-        if report:
-            report.status = "processing"
-            REPORTS[report_id] = report
+    try:
+        if job.type == "report_created":
+            report_id = job.payload.report_id
+            report = REPORTS.get(report_id)
+            if report:
+                report.status = "processing"
+                REPORTS[report_id] = report
 
-            event, created = EVENTS.upsert_from_report(report, REPORTS)
-            REPORT_TO_EVENT[report_id] = event.id
+                event, created = EVENTS.upsert_from_report(report, REPORTS)
+                REPORT_TO_EVENT[report_id] = event.id
 
-            # finalize report as ready 
-            report.status = "ready"
-            REPORTS[report_id] = report
+                report.status = "ready"
+                REPORTS[report_id] = report
 
-            logger.info(
-                "event_upserted",
-                extra={"event_id": event.id, "created": created, "report_id": report_id, "cell": event.cell_id},
-            )
+                logger.info(
+                    "event_upserted",
+                    extra={
+                        "event_id": event.id,
+                        "created": created,
+                        "report_id": report_id,
+                        "cell": event.cell_id,
+                    },
+                )
+
+    except Exception as e:
+        logger.exception(
+            "job_complete_failed",
+            extra={"job_id": job_id, "worker_id": req.worker_id, "error": str(e)},
+        )
+        # Mark job failed so it doesn't get stuck in limbo
+        JOB_QUEUE.fail(job_id, error=str(e))
+        raise HTTPException(status_code=500, detail="job_complete_failed")
 
     logger.info("job_completed", extra={"job_id": job.id, "worker_id": req.worker_id, "ok": req.ok})
     return job

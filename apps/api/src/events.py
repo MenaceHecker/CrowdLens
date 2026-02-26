@@ -50,14 +50,14 @@ class InMemoryEventStore:
             event.report_count = len(event.report_ids)
             event.updated_at = now
 
-            # Evolve status based on volume stub logic
+            # Evolving status based on volume stub logic
             if event.report_count >= 3:
                 event.status = "active"
                 event.title = "Active situation"
                 event.confidence = min(0.9, 0.5 + 0.1 * (event.report_count - 1))
                 event.severity = min(5, 1 + (event.report_count // 3))
 
-            # Update centroid from linked reports
+            # Updating centroid from linked reports
             linked = [all_reports[rid] for rid in event.report_ids if rid in all_reports]
             event.centroid = _centroid(linked) if linked else event.centroid
 
