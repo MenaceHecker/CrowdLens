@@ -40,6 +40,15 @@ async def _fetch_next_job(client: httpx.AsyncClient) -> Optional[Job]:
 async def _complete_job(client: httpx.AsyncClient, job_id: str) -> None:
     payload = JobResultRequest(worker_id=WORKER_ID, ok=True).model_dump()
     resp = await client.post(f"{API_BASE}/jobs/{job_id}/complete", json=payload)
+    if resp.status_code >= 400:
+        logger.error(
+            "api_complete_failed",
+            extra={
+                "status_code": resp.status_code,
+                "body": resp.text[:2000],
+                "job_id": job_id,
+            },
+        )
     resp.raise_for_status()
 
 
