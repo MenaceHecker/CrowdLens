@@ -144,21 +144,18 @@ def complete_job(job_id: str, req: JobResultRequest):
                 REPORTS[report_id] = report
 
                 logger.info(
-                    "event_upserted",
-                    extra={
-                        "event_id": event.id,
-                        "created": created,
-                        "report_id": report_id,
-                        "cell": event.cell_id,
-                    },
+                "event_upserted",
+                extra={"event_id": event.id, "created": created, "report_id": report_id, "cell": event.cell_id},
                 )
+
+        job = JOB_QUEUE.complete(job_id)
 
     except Exception as e:
         logger.exception(
             "job_complete_failed",
             extra={"job_id": job_id, "worker_id": req.worker_id, "error": str(e)},
         )
-        # Mark job failed so it doesn't get stuck in limbo
+        # Marking job failed so it doesn't get stuck in limbo
         JOB_QUEUE.fail(job_id, error=str(e))
         raise HTTPException(status_code=500, detail="job_complete_failed")
 
