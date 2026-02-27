@@ -19,6 +19,7 @@ from apps.api.src.job_queue import InMemoryJobQueue
 from apps.api.src.events import InMemoryEventStore
 
 
+LAST_ERROR: dict | None = None
 setup_logging(service="api", level=settings.LOG_LEVEL)
 logger = logging.getLogger("api")
 
@@ -198,3 +199,7 @@ def get_event(event_id: str):
     if not event:
         raise HTTPException(status_code=404, detail="event_not_found")
     return event
+
+@app.get("/debug/last-error")
+def debug_last_error():
+    return LAST_ERROR or {"ok": True, "last_error": None}
