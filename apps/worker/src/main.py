@@ -36,6 +36,10 @@ async def _fetch_next_job(client: httpx.AsyncClient) -> Optional[Job]:
     resp.raise_for_status()
     return Job.model_validate(resp.json())
 
+async def _upsert_event_from_report(client: httpx.AsyncClient, report_id: str) -> None:
+    resp = await client.post(f"{API_BASE}/events/upsert-from-report", json={"report_id": report_id})
+    resp.raise_for_status()
+
 
 async def _complete_job(client: httpx.AsyncClient, job_id: str) -> None:
     payload = JobResultRequest(worker_id=WORKER_ID, ok=True).model_dump()
