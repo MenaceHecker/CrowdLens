@@ -126,70 +126,15 @@ def get_next_job(req: NextJobRequest):
 
 @app.post("/jobs/{job_id}/complete", response_model=Job)
 def complete_job(job_id: str, req: JobResultRequest):
-    global LAST_ERROR
-    job = JOB_QUEUE.jobs.get(job_id)
+    job = JOB_QUEUE.complete(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
 
-    try:
-        if job.type == "report_created":
-            report_id = job.payload.report_id
-            report = REPORTS.get(report_id)
-            if report:
-                report.status = "processing"
-                REPORTS[report_id] = report
-
-                event, created = EVENTS.upsert_from_report(report, REPORTS)
-                REPORT_TO_EVENT[report_id] = event.id
-
-                report.status = "ready"
-                REPORTS[report_id] = report
-
-                logger.info(
-                    "event_upserted",
-                    extra={
-                        "event_id": event.id,
-                        "created": created,
-                        "report_id": report_id,
-                        "cell": event.cell_id,
-                    },
-                )
-
-        # Only now mark the job done
-        job = JOB_QUEUE.complete(job_id)
-        if not job:
-            raise RuntimeError("job_missing_after_complete")
-
-        logger.info("job_completed", extra={"job_id": job.id, "worker_id": req.worker_id, "ok": req.ok})
-        return job
-
-    except Exception as e:
-        # Store the real error for easy debugging
-        LAST_ERROR = {
-            "where": "jobs_complete",
-            "job_id": job_id,
-            "worker_id": req.worker_id,
-            "error": str(e),
-        }
-
-        logger.exception(
-            "job_complete_failed",
-            extra={"job_id": job_id, "worker_id": req.worker_id, "error": str(e)},
-        )
-
-        # Mark job failed 
-        JOB_QUEUE.fail(job_id, error=str(e))
-
-        # Also mark report failed 
-        if job.type == "report_created":
-            report_id = job.payload.report_id
-            report = REPORTS.get(report_id)
-            if report:
-                report.status = "failed"
-                REPORTS[report_id] = report
-
-        # Return the real error string in the response 
-        raise HTTPException(status_code=500, detail=f"job_complete_failed: {str(e)}")
+    logger.info(
+        "job_completed",
+        extra={"job_id": job.id, "worker_id": req.worker_id, "ok": req.ok},
+    )
+    return job
 
 
 @app.post("/jobs/{job_id}/fail", response_model=Job)
