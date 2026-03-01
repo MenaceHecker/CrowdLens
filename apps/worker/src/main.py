@@ -74,11 +74,9 @@ async def run_once():
         logger.info("job_processing_started", extra={"job_id": job.id, "type": job.type})
 
         try:
-            # Stub processing
-            # Later: embeddings, clustering, credibility scoring, Gemini briefing, persistence
             if job.type == "report_created":
                 # simulate work
-                pass
+                await _upsert_event_from_report(client, job.payload.report_id)
             else:
                 raise ValueError(f"unsupported_job_type: {job.type}")
 
