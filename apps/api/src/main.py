@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from packages.shared.models import (
     CreateReportRequest,
@@ -107,6 +108,33 @@ def get_report(report_id: str):
         raise HTTPException(status_code=404, detail="report_not_found")
     return report
 
+class UpsertFromReportRequest(BaseModel):
+    report_id: str
+
+class UpsertFromReportResponse(BaseModel):
+    event_id: str
+    created: bool
+
+@app.post("/events/upsert-from-report", response_model=UpsertFromReportResponse)
+def upsert_event_from_report(req: UpsertFromReportRequest):
+    report = REPORTS.get(req.report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="report_not_found")
+
+    report.status = "processing"
+    REPORTS[report.id] = report
+
+    event, created = EVENTS.upsert_from_report(report, REPORTS)
+    REPORT_TO_EVENT[report.id] = event.id
+
+    report.status = "ready"
+    REPORTS[report.id] = report
+
+    logger.info(
+        "event_upserted",
+        extra={"event_id": event.id, "created": created, "report_id": report.id},
+    )
+    return UpsertFromReportResponse(event_id=event.id, created=created)
 
 # -------- Local Job Queue Endpoints (Option A) --------
 
