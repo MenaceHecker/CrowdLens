@@ -10,6 +10,7 @@ from packages.core.config import settings
 from packages.core.logging import setup_logging
 from packages.shared.models import Job, NextJobRequest, JobResultRequest
 
+
 setup_logging(service="worker", level=settings.LOG_LEVEL)
 logger = logging.getLogger("worker")
 
@@ -17,6 +18,7 @@ app = FastAPI(title="CrowdLens Worker", version="0.1.0")
 
 API_BASE = os.getenv("API_BASE", "http://localhost:8000")
 WORKER_ID = os.getenv("WORKER_ID", "worker-local-1")
+
 
 @app.get("/healthz")
 def healthz():
@@ -26,31 +28,43 @@ def healthz():
         "service": "worker",
         "env": settings.APP_ENV,
         "time": datetime.now(timezone.utc).isoformat(),
-         "api_base": API_BASE,
+        "api_base": API_BASE,
         "worker_id": WORKER_ID,
     }
+
+
 async def _fetch_next_job(client: httpx.AsyncClient) -> Optional[Job]:
-    resp = await client.post(f"{API_BASE}/jobs/next", json=NextJobRequest(worker_id=WORKER_ID).model_dump())
+    resp = await client.post(
+        f"{API_BASE}/jobs/next",
+        json=NextJobRequest(worker_id=WORKER_ID).model_dump(),
+    )
     if resp.status_code == 204:
         return None
     resp.raise_for_status()
     return Job.model_validate(resp.json())
 
+
 async def _upsert_event_from_report(client: httpx.AsyncClient, report_id: str) -> None:
-    resp = await client.post(f"{API_BASE}/events/upsert-from-report", json={"report_id": report_id})
+    resp = await client.post(
+        f"{API_BASE}/events/upsert-from-report",
+        json={"report_id": report_id},
+    )
+    if resp.status_code >= 400:
+        logger.error(
+            "api_upsert_failed",
+            extra={"status_code": resp.status_code, "body": resp.text[:2000], "report_id": report_id},
+        )
     resp.raise_for_status()
 
 
 async def _complete_job(client: httpx.AsyncClient, job_id: str) -> None:
     payload = JobResultRequest(worker_id=WORKER_ID, ok=True).model_dump()
     resp = await client.post(f"{API_BASE}/jobs/{job_id}/complete", json=payload)
-
     if resp.status_code >= 400:
         logger.error(
             "api_complete_failed",
             extra={"status_code": resp.status_code, "body": resp.text[:2000], "job_id": job_id},
         )
-
     resp.raise_for_status()
 
 
@@ -75,7 +89,6 @@ async def run_once():
 
         try:
             if job.type == "report_created":
-                # simulate work
                 await _upsert_event_from_report(client, job.payload.report_id)
             else:
                 raise ValueError(f"unsupported_job_type: {job.type}")
