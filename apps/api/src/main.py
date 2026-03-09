@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+import traceback
 
 from packages.shared.models import (
     CreateReportRequest,
@@ -25,6 +26,7 @@ setup_logging(service="api", level=settings.LOG_LEVEL)
 logger = logging.getLogger("api")
 
 app = FastAPI(title="CrowdLens API", version="0.1.0")
+LAST_ERROR: dict | None = None
 
 REPORTS: dict[str, Report] = {}
 JOB_QUEUE = InMemoryJobQueue()
@@ -65,7 +67,27 @@ async def request_logging(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.exception("unhandled_exception", extra={"path": request.url.path})
+    global LAST_ERROR
+
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+
+    LAST_ERROR = {
+        "where": "unhandled_exception",
+        "path": request.url.path,
+        "error": str(exc),
+        "traceback": tb[-8000:],  # keep it bounded
+    }
+
+    logger.exception("unhandled_exception", extra={"path": request.url.path, "error": str(exc)})
+
+    # Local dev returning the actual error so the worker can print it
+    if settings.APP_ENV == "local":
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "detail": str(exc)},
+        )
+
+    # Non-local so keeping it generic
     return JSONResponse(status_code=500, content={"error": "internal_error"})
 
 
@@ -213,3 +235,4 @@ def get_event(event_id: str):
 @app.get("/debug/last-error")
 def debug_last_error():
     return LAST_ERROR or {"ok": True, "last_error": None}
+
