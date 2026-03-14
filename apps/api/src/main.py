@@ -293,3 +293,19 @@ def get_event(event_id: str):
     if not event:
         raise HTTPException(status_code=404, detail="event_not_found")
     return event
+
+
+@app.get("/events/{event_id}/reports", response_model=list[Report])
+def get_event_reports(event_id: str):
+    event = EVENTS.get(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="event_not_found")
+
+    reports = [
+        REPORTS[report_id]
+        for report_id in event.report_ids
+        if report_id in REPORTS
+    ]
+
+    reports.sort(key=lambda report: report.created_at)
+    return reports
