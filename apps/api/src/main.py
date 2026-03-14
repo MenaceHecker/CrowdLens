@@ -1,10 +1,11 @@
 import logging
+import traceback
 from datetime import datetime, timezone
 from uuid import uuid4
+
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-import traceback
+from pydantic import BaseModel, Field
 
 from packages.shared.models import (
     CreateReportRequest,
@@ -21,13 +22,12 @@ from apps.api.src.job_queue import InMemoryJobQueue
 from apps.api.src.events import InMemoryEventStore
 
 
-LAST_ERROR: dict | None = None
 setup_logging(service="api", level=settings.LOG_LEVEL)
 logger = logging.getLogger("api")
 
 app = FastAPI(title="CrowdLens API", version="0.1.0")
-LAST_ERROR: dict | None = None
 
+# Option A local dev stores (temporary)
 REPORTS: dict[str, Report] = {}
 JOB_QUEUE = InMemoryJobQueue()
 EVENTS = InMemoryEventStore()
@@ -35,14 +35,17 @@ EVENTS = InMemoryEventStore()
 # report_id -> event_id mapping (local)
 REPORT_TO_EVENT: dict[str, str] = {}
 
-@app.post("/jobs/next", response_model=Job)
-def get_next_job(req: NextJobRequest):
-    job = JOB_QUEUE.next_job()
-    if not job:
-        return Response(status_code=204)
+# local debug capture
+LAST_ERROR: dict | None = None
 
-    logger.info("job_claimed", extra={"job_id": job.id, "worker_id": req.worker_id})
-    return job
+
+class UpsertFromReportRequest(BaseModel):
+    report_id: str = Field(..., min_length=1)
+
+
+class UpsertFromReportResponse(BaseModel):
+    event_id: str
+    created: bool
 
 
 @app.middleware("http")
@@ -75,19 +78,20 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         "where": "unhandled_exception",
         "path": request.url.path,
         "error": str(exc),
-        "traceback": tb[-8000:],  # keep it bounded
+        "traceback": tb[-8000:],
     }
 
-    logger.exception("unhandled_exception", extra={"path": request.url.path, "error": str(exc)})
+    logger.exception(
+        "unhandled_exception",
+        extra={"path": request.url.path, "error_text": str(exc)},
+    )
 
-    # Local dev returning the actual error so the worker can print it
     if settings.APP_ENV == "local":
         return JSONResponse(
             status_code=500,
             content={"error": "internal_error", "detail": str(exc)},
         )
 
-    # Non-local so keeping it generic
     return JSONResponse(status_code=500, content={"error": "internal_error"})
 
 
@@ -99,6 +103,11 @@ def healthz():
         "env": settings.APP_ENV,
         "time": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/debug/last-error")
+def debug_last_error():
+    return LAST_ERROR or {"ok": True, "last_error": None}
 
 
 @app.post("/reports", response_model=Report)
@@ -119,7 +128,14 @@ def create_report(payload: CreateReportRequest):
     REPORTS[rid] = report
 
     job = JOB_QUEUE.enqueue_report_created(report_id=rid, user_id=user_id)
-    logger.info("job_enqueued", extra={"job_id": job.id, "type": job.type, "report_id": rid})
+    logger.info(
+        "job_enqueued",
+        extra={
+            "job_id": job.id,
+            "job_type": job.type,
+            "report_id": rid,
+        },
+    )
     return report
 
 
@@ -130,12 +146,72 @@ def get_report(report_id: str):
         raise HTTPException(status_code=404, detail="report_not_found")
     return report
 
-class UpsertFromReportRequest(BaseModel):
-    report_id: str
 
-class UpsertFromReportResponse(BaseModel):
-    event_id: str
-    created: bool
+# -------- Local Job Queue Endpoints (Option A) --------
+
+@app.get("/jobs", response_model=list[Job])
+def list_jobs():
+    return JOB_QUEUE.list_jobs()
+
+
+@app.post("/jobs/next", response_model=Job)
+def get_next_job(req: NextJobRequest):
+    job = JOB_QUEUE.next_job()
+    if not job:
+        return Response(status_code=204)
+
+    logger.info(
+        "job_claimed",
+        extra={
+            "job_id": job.id,
+            "worker_id": req.worker_id,
+        },
+    )
+    return job
+
+
+@app.post("/jobs/{job_id}/complete", response_model=Job)
+def complete_job(job_id: str, req: JobResultRequest):
+    job = JOB_QUEUE.complete(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job_not_found")
+
+    logger.info(
+        "job_completed",
+        extra={
+            "job_id": job.id,
+            "worker_id": req.worker_id,
+            "ok": req.ok,
+        },
+    )
+    return job
+
+
+@app.post("/jobs/{job_id}/fail", response_model=Job)
+def fail_job(job_id: str, req: JobResultRequest):
+    job = JOB_QUEUE.fail(job_id, error=req.error or "unknown_error")
+    if not job:
+        raise HTTPException(status_code=404, detail="job_not_found")
+
+    if job.type == "report_created":
+        report_id = job.payload.report_id
+        report = REPORTS.get(report_id)
+        if report:
+            report.status = "failed"
+            REPORTS[report_id] = report
+
+    logger.info(
+        "job_failed",
+        extra={
+            "job_id": job.id,
+            "worker_id": req.worker_id,
+            "error_text": job.error,
+        },
+    )
+    return job
+
+
+# -------- Processing Endpoint (Worker calls this) --------
 
 @app.post("/events/upsert-from-report", response_model=UpsertFromReportResponse)
 def upsert_event_from_report(req: UpsertFromReportRequest):
@@ -159,7 +235,7 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
             "event_upserted",
             extra={
                 "event_id": event.id,
-                "created": created,
+                "event_created": created,
                 "report_id": report.id,
                 "cell": event.cell_id,
             },
@@ -184,58 +260,13 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
 
         logger.exception(
             "events_upsert_failed",
-            extra={"report_id": req.report_id, "error": str(e)},
+            extra={
+                "report_id": req.report_id,
+                "error_text": str(e),
+            },
         )
 
         raise HTTPException(status_code=500, detail=f"events_upsert_failed: {str(e)}")
-
-# -------- Local Job Queue Endpoints (Option A) --------
-
-@app.get("/jobs", response_model=list[Job])
-def list_jobs():
-    return JOB_QUEUE.list_jobs()
-
-
-@app.post("/jobs/next", response_model=Job)
-def get_next_job(req: NextJobRequest):
-    job = JOB_QUEUE.next_job()
-    if not job:
-        raise HTTPException(status_code=204, detail="no_jobs")
-    logger.info("job_claimed", extra={"job_id": job.id, "worker_id": req.worker_id})
-    return job
-
-
-@app.post("/jobs/{job_id}/complete", response_model=Job)
-def complete_job(job_id: str, req: JobResultRequest):
-    job = JOB_QUEUE.complete(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job_not_found")
-
-    logger.info(
-        "job_completed",
-        extra={"job_id": job.id, "worker_id": req.worker_id, "ok": req.ok},
-    )
-    return job
-
-
-@app.post("/jobs/{job_id}/fail", response_model=Job)
-def fail_job(job_id: str, req: JobResultRequest):
-    job = JOB_QUEUE.fail(job_id, error=req.error or "unknown_error")
-    if not job:
-        raise HTTPException(status_code=404, detail="job_not_found")
-
-    if job.type == "report_created":
-        report_id = job.payload.report_id
-        report = REPORTS.get(report_id)
-        if report:
-            report.status = "failed"
-            REPORTS[report_id] = report
-
-    logger.info(
-        "job_failed",
-        extra={"job_id": job.id, "worker_id": req.worker_id, "error": job.error},
-    )
-    return job
 
 
 # -------- Events + Feed --------
@@ -244,9 +275,14 @@ def fail_job(job_id: str, req: JobResultRequest):
 def get_feed():
     events = EVENTS.list_active()
     items: list[FeedItem] = []
-    for e in events:
-        latest_report_id = e.report_ids[-1] if e.report_ids else None
-        items.append(FeedItem(event=e, latest_report_id=latest_report_id))
+    for event in events:
+        latest_report_id = event.report_ids[-1] if event.report_ids else None
+        items.append(
+            FeedItem(
+                event=event,
+                latest_report_id=latest_report_id,
+            )
+        )
     return items
 
 
@@ -256,8 +292,3 @@ def get_event(event_id: str):
     if not event:
         raise HTTPException(status_code=404, detail="event_not_found")
     return event
-
-@app.get("/debug/last-error")
-def debug_last_error():
-    return LAST_ERROR or {"ok": True, "last_error": None}
-
