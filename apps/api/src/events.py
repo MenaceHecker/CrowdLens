@@ -9,11 +9,6 @@ from packages.shared.models import Event, LatLng, Report
 
 
 def _cell_id(lat: float, lng: float, cell_size_deg: float = 0.01) -> str:
-    """
-    Very simple geo bucketing for local dev:
-    0.01 degrees ~ about 1.1km latitude.
-    Good enough to simulate clustering.
-    """
     lat_bucket = int(lat / cell_size_deg)
     lng_bucket = int(lng / cell_size_deg)
     return f"{lat_bucket}:{lng_bucket}"
@@ -35,10 +30,6 @@ class InMemoryEventStore:
         self.cell_to_event = {}
 
     def upsert_from_report(self, report: Report, all_reports: Dict[str, Report]) -> Tuple[Event, bool]:
-        """
-        Create or update an event based on geo-cell clustering.
-        Returns (event, created_bool).
-        """
         now = datetime.now(timezone.utc)
         cell = _cell_id(report.location.lat, report.location.lng)
 
@@ -47,24 +38,19 @@ class InMemoryEventStore:
             event = self.events[existing_event_id]
             if report.id not in event.report_ids:
                 event.report_ids.append(report.id)
+
             event.report_count = len(event.report_ids)
             event.updated_at = now
 
-            # Evolving status based on volume stub logic
             if event.report_count >= 3:
                 event.status = "active"
-                event.title = "Active situation"
-                event.confidence = min(0.9, 0.5 + 0.1 * (event.report_count - 1))
-                event.severity = min(5, 1 + (event.report_count // 3))
 
-            # Updating centroid from linked reports
             linked = [all_reports[rid] for rid in event.report_ids if rid in all_reports]
             event.centroid = _centroid(linked) if linked else event.centroid
 
             self.events[event.id] = event
             return event, False
 
-        # Create new event
         eid = str(uuid4())
         event = Event(
             id=eid,
@@ -88,7 +74,6 @@ class InMemoryEventStore:
         return self.events.get(event_id)
 
     def list_active(self) -> list[Event]:
-        # show forming+active, newest updated first
-        items = [e for e in self.events.values() if e.status in ("forming", "active")]
-        items.sort(key=lambda e: e.updated_at, reverse=True)
+        items = [event for event in self.events.values() if event.status in ("forming", "active")]
+        items.sort(key=lambda event: event.updated_at, reverse=True)
         return items
