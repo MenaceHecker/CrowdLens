@@ -20,6 +20,7 @@ from packages.core.config import settings
 from packages.core.logging import setup_logging
 from apps.api.src.job_queue import InMemoryJobQueue
 from apps.api.src.events import InMemoryEventStore
+from apps.api.src.briefing import build_briefing
 
 
 setup_logging(service="api", level=settings.LOG_LEVEL)
@@ -27,15 +28,10 @@ logger = logging.getLogger("api")
 
 app = FastAPI(title="CrowdLens API", version="0.1.0")
 
-# Option A local dev stores (temporary)
 REPORTS: dict[str, Report] = {}
 JOB_QUEUE = InMemoryJobQueue()
 EVENTS = InMemoryEventStore()
-
-# report_id -> event_id mapping (local)
 REPORT_TO_EVENT: dict[str, str] = {}
-
-# local debug capture
 LAST_ERROR: dict | None = None
 
 
@@ -147,8 +143,6 @@ def get_report(report_id: str):
     return report
 
 
-# -------- Local Job Queue Endpoints (Option A) --------
-
 @app.get("/jobs", response_model=list[Job])
 def list_jobs():
     return JOB_QUEUE.list_jobs()
@@ -211,8 +205,6 @@ def fail_job(job_id: str, req: JobResultRequest):
     return job
 
 
-# -------- Processing Endpoint (Worker calls this) --------
-
 @app.post("/events/upsert-from-report", response_model=UpsertFromReportResponse)
 def upsert_event_from_report(req: UpsertFromReportRequest):
     global LAST_ERROR
@@ -228,6 +220,14 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
         event, created = EVENTS.upsert_from_report(report, REPORTS)
         REPORT_TO_EVENT[report.id] = event.id
 
+        linked_reports = [
+            REPORTS[rid]
+            for rid in event.report_ids
+            if rid in REPORTS
+        ]
+        event.briefing = build_briefing(event, linked_reports)
+        EVENTS.events[event.id] = event
+
         report.status = "ready"
         REPORTS[report.id] = report
 
@@ -238,6 +238,7 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
                 "event_created": created,
                 "report_id": report.id,
                 "cell": event.cell_id,
+                "report_count": event.report_count,
             },
         )
 
@@ -269,12 +270,11 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
         raise HTTPException(status_code=500, detail=f"events_upsert_failed: {str(e)}")
 
 
-# -------- Events + Feed --------
-
 @app.get("/feed", response_model=list[FeedItem])
 def get_feed():
     events = EVENTS.list_active()
     items: list[FeedItem] = []
+
     for event in events:
         latest_report_id = event.report_ids[-1] if event.report_ids else None
         items.append(
@@ -283,6 +283,7 @@ def get_feed():
                 latest_report_id=latest_report_id,
             )
         )
+
     return items
 
 
