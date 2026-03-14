@@ -49,11 +49,19 @@ async def _upsert_event_from_report(client: httpx.AsyncClient, report_id: str) -
         f"{API_BASE}/events/upsert-from-report",
         json={"report_id": report_id},
     )
+
     if resp.status_code >= 400:
+        body = resp.text[:2000]
         logger.error(
             "api_upsert_failed",
-            extra={"status_code": resp.status_code, "body": resp.text[:2000], "report_id": report_id},
+            extra={
+                "status_code": resp.status_code,
+                "body": body,
+                "report_id": report_id,
+            },
         )
+        raise RuntimeError(f"upsert_failed status={resp.status_code} body={body}")
+
     resp.raise_for_status()
 
 
