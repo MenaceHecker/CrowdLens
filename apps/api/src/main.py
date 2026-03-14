@@ -189,18 +189,9 @@ def complete_job(job_id: str, req: JobResultRequest):
 
 @app.post("/jobs/{job_id}/fail", response_model=Job)
 def fail_job(job_id: str, req: JobResultRequest):
-    global LAST_ERROR
-
     job = JOB_QUEUE.fail(job_id, error=req.error or "unknown_error")
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
-
-    LAST_ERROR = {
-        "where": "jobs_fail",
-        "job_id": job_id,
-        "worker_id": req.worker_id,
-        "error": job.error,
-    }
 
     if job.type == "report_created":
         report_id = job.payload.report_id
@@ -209,7 +200,10 @@ def fail_job(job_id: str, req: JobResultRequest):
             report.status = "failed"
             REPORTS[report_id] = report
 
-    logger.info("job_failed", extra={"job_id": job.id, "worker_id": req.worker_id, "error": job.error})
+    logger.info(
+        "job_failed",
+        extra={"job_id": job.id, "worker_id": req.worker_id, "error": job.error},
+    )
     return job
 
 
