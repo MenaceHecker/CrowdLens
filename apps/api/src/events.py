@@ -20,6 +20,14 @@ def _centroid(reports: list[Report]) -> LatLng:
     return LatLng(lat=lat, lng=lng)
 
 
+def _derive_trend(report_count: int) -> str:
+    if report_count <= 1:
+        return "new"
+    if report_count <= 3:
+        return "growing"
+    return "stable"
+
+
 @dataclass
 class InMemoryEventStore:
     events: Dict[str, Event]
@@ -41,6 +49,8 @@ class InMemoryEventStore:
 
             event.report_count = len(event.report_ids)
             event.updated_at = now
+            event.last_seen_at = now
+            event.trend = _derive_trend(event.report_count)
 
             if event.report_count >= 3:
                 event.status = "active"
@@ -57,6 +67,9 @@ class InMemoryEventStore:
             status="forming",
             created_at=now,
             updated_at=now,
+            first_seen_at=now,
+            last_seen_at=now,
+            trend="new",
             cell_id=cell,
             centroid=LatLng(lat=report.location.lat, lng=report.location.lng),
             report_ids=[report.id],
