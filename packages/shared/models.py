@@ -1,21 +1,28 @@
-from pydantic import BaseModel, Field
-from typing import Any, Optional, Literal, Dict, List
 from datetime import datetime
+from typing import Optional, Literal, Any, Dict, List
+
+from pydantic import BaseModel, Field
+
+from packages.shared.briefing import EventBriefing
+
 
 ReportStatus = Literal["submitted", "queued", "processing", "ready", "failed"]
-
 JobType = Literal["report_created"]
 JobStatus = Literal["queued", "processing", "done", "failed"]
+EventStatus = Literal["forming", "active", "resolved"]
+
 
 class LatLng(BaseModel):
     lat: float = Field(..., ge=-90, le=90)
     lng: float = Field(..., ge=-180, le=180)
 
+
 class CreateReportRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=4000)
     location: LatLng
     occurred_at: Optional[datetime] = None
-    media_url: Optional[str] = None  #Cloud Storage URL or placeholder
+    media_url: Optional[str] = None
+
 
 class Report(BaseModel):
     id: str
@@ -26,6 +33,7 @@ class Report(BaseModel):
     created_at: datetime
     status: ReportStatus = "submitted"
     media_url: Optional[str] = None
+
 
 class JobPayload(BaseModel):
     report_id: str
@@ -53,8 +61,6 @@ class JobResultRequest(BaseModel):
     error: Optional[str] = None
     output: Optional[Dict[str, Any]] = None
 
-EventStatus = Literal["forming", "active", "resolved"]
-
 
 class Event(BaseModel):
     id: str
@@ -62,19 +68,16 @@ class Event(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    # Simple local clustering representation
     cell_id: str
     centroid: LatLng
 
-    # Report linkage + stats
     report_ids: List[str] = Field(default_factory=list)
     report_count: int = 0
 
-    # Stubs for later ML output
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     severity: int = Field(default=1, ge=1, le=5)
     title: str = "Situation forming"
-    briefing: Optional[dict] = None  # later Gemini structured JSON
+    briefing: Optional[EventBriefing] = None
 
 
 class FeedItem(BaseModel):
