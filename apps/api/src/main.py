@@ -239,6 +239,9 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
                 "report_id": report.id,
                 "cell": event.cell_id,
                 "report_count": event.report_count,
+                "trend": event.trend,
+                "first_seen_at": event.first_seen_at.isoformat(),
+                "last_seen_at": event.last_seen_at.isoformat(),
             },
         )
 
