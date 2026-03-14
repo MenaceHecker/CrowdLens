@@ -122,7 +122,7 @@ def _recommended_actions(severity: SeverityLevel, tags: List[str]) -> List[str]:
     return actions[:4]
 
 
-def _build_summary(reports: List[Report], report_count: int) -> str:
+def _build_summary(event: Event, reports: List[Report], report_count: int) -> str:
     if not reports:
         return "Community reports indicate a developing situation in the area."
 
@@ -131,10 +131,16 @@ def _build_summary(reports: List[Report], report_count: int) -> str:
     most_common_text, _ = counts.most_common(1)[0]
 
     if report_count == 1:
-        return f"1 community report indicates a developing situation. Latest signal: {reports[-1].text}"
+        return f"1 community report indicates a newly observed situation. Latest signal: {reports[-1].text}"
+
+    if event.trend == "growing":
+        return (
+            f"{report_count} community reports are reinforcing the same situation in this area. "
+            f"Most repeated signal: {most_common_text}"
+        )
 
     return (
-        f"{report_count} community reports indicate a developing situation in the same area. "
+        f"{report_count} community reports indicate an ongoing situation in the same area. "
         f"Most repeated signal: {most_common_text}"
     )
 
@@ -154,7 +160,7 @@ def build_briefing(event: Event, reports: List[Report]) -> EventBriefing:
     confidence = _confidence_from_reports(reports)
     tags = _extract_tags_from_reports(reports)
     title = _build_title(severity_label, event.report_count)
-    summary = _build_summary(reports, event.report_count)
+    summary = _build_summary(event, reports, event.report_count)
     has_media = any(report.media_url for report in reports)
 
     briefing = EventBriefing(
