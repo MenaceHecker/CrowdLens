@@ -10,6 +10,7 @@ ReportStatus = Literal["submitted", "queued", "processing", "ready", "failed"]
 JobType = Literal["report_created"]
 JobStatus = Literal["queued", "processing", "done", "failed"]
 EventStatus = Literal["forming", "active", "resolved"]
+EventTrend = Literal["new", "growing", "stable"]
 
 
 class LatLng(BaseModel):
@@ -67,6 +68,10 @@ class Event(BaseModel):
     status: EventStatus
     created_at: datetime
     updated_at: datetime
+
+    first_seen_at: datetime
+    last_seen_at: datetime
+    trend: EventTrend = "new"
 
     cell_id: str
     centroid: LatLng
