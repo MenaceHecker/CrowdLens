@@ -139,24 +139,55 @@ class UpsertFromReportResponse(BaseModel):
 
 @app.post("/events/upsert-from-report", response_model=UpsertFromReportResponse)
 def upsert_event_from_report(req: UpsertFromReportRequest):
-    report = REPORTS.get(req.report_id)
-    if not report:
-        raise HTTPException(status_code=404, detail="report_not_found")
+    global LAST_ERROR
 
-    report.status = "processing"
-    REPORTS[report.id] = report
+    try:
+        report = REPORTS.get(req.report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="report_not_found")
 
-    event, created = EVENTS.upsert_from_report(report, REPORTS)
-    REPORT_TO_EVENT[report.id] = event.id
+        report.status = "processing"
+        REPORTS[report.id] = report
 
-    report.status = "ready"
-    REPORTS[report.id] = report
+        event, created = EVENTS.upsert_from_report(report, REPORTS)
+        REPORT_TO_EVENT[report.id] = event.id
 
-    logger.info(
-        "event_upserted",
-        extra={"event_id": event.id, "created": created, "report_id": report.id},
-    )
-    return UpsertFromReportResponse(event_id=event.id, created=created)
+        report.status = "ready"
+        REPORTS[report.id] = report
+
+        logger.info(
+            "event_upserted",
+            extra={
+                "event_id": event.id,
+                "created": created,
+                "report_id": report.id,
+                "cell": event.cell_id,
+            },
+        )
+
+        return UpsertFromReportResponse(event_id=event.id, created=created)
+
+    except HTTPException as e:
+        LAST_ERROR = {
+            "where": "events_upsert_from_report_http",
+            "report_id": req.report_id,
+            "error": str(e.detail),
+        }
+        raise
+
+    except Exception as e:
+        LAST_ERROR = {
+            "where": "events_upsert_from_report",
+            "report_id": req.report_id,
+            "error": str(e),
+        }
+
+        logger.exception(
+            "events_upsert_failed",
+            extra={"report_id": req.report_id, "error": str(e)},
+        )
+
+        raise HTTPException(status_code=500, detail=f"events_upsert_failed: {str(e)}")
 
 # -------- Local Job Queue Endpoints (Option A) --------
 
