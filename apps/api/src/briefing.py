@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import List
 
 from packages.shared.briefing import EventBriefing, BriefingSourceStats, SeverityLevel
@@ -46,12 +47,12 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.lower().strip().split())
 
 
-def _extract_tags(text: str) -> List[str]:
-    normalized = _normalize_text(text)
+def _extract_tags_from_reports(reports: List[Report]) -> List[str]:
+    combined = " ".join(_normalize_text(report.text) for report in reports)
     tags: List[str] = []
 
     tag_rules = [
-        ("traffic", ["traffic", "congestion", "intersection", "road", "blocked"]),
+        ("traffic", ["traffic", "congestion", "intersection", "road", "blocked", "accident", "crash"]),
         ("power", ["power outage", "outage", "downed power line"]),
         ("fire", ["fire", "smoke", "explosion"]),
         ("medical", ["injury", "injured", "ambulance", "emergency"]),
@@ -60,21 +61,21 @@ def _extract_tags(text: str) -> List[str]:
     ]
 
     for tag, keywords in tag_rules:
-        if any(keyword in normalized for keyword in keywords):
+        if any(keyword in combined for keyword in keywords):
             tags.append(tag)
 
     return tags[:5]
 
 
-def _severity_from_text_and_count(text: str, report_count: int) -> tuple[SeverityLevel, int]:
-    normalized = _normalize_text(text)
+def _severity_from_reports(reports: List[Report], report_count: int) -> tuple[SeverityLevel, int]:
+    combined = " ".join(_normalize_text(report.text) for report in reports)
 
-    if any(keyword in normalized for keyword in HIGH_SEVERITY_KEYWORDS):
+    if any(keyword in combined for keyword in HIGH_SEVERITY_KEYWORDS):
         if report_count >= 3:
             return "critical", 5
         return "high", 4
 
-    if any(keyword in normalized for keyword in MEDIUM_SEVERITY_KEYWORDS):
+    if any(keyword in combined for keyword in MEDIUM_SEVERITY_KEYWORDS):
         if report_count >= 3:
             return "high", 4
         return "medium", 3
@@ -85,16 +86,17 @@ def _severity_from_text_and_count(text: str, report_count: int) -> tuple[Severit
     return "low", 1
 
 
-def _confidence_from_report_count(report_count: int) -> float:
+def _confidence_from_reports(reports: List[Report]) -> float:
+    report_count = len(reports)
     if report_count <= 1:
         return 0.52
     if report_count == 2:
-        return 0.64
+        return 0.68
     if report_count == 3:
-        return 0.76
+        return 0.8
     if report_count == 4:
-        return 0.84
-    return 0.9
+        return 0.88
+    return 0.92
 
 
 def _recommended_actions(severity: SeverityLevel, tags: List[str]) -> List[str]:
@@ -120,32 +122,39 @@ def _recommended_actions(severity: SeverityLevel, tags: List[str]) -> List[str]:
     return actions[:4]
 
 
+def _build_summary(reports: List[Report], report_count: int) -> str:
+    if not reports:
+        return "Community reports indicate a developing situation in the area."
+
+    normalized_texts = [_normalize_text(report.text) for report in reports]
+    counts = Counter(normalized_texts)
+    most_common_text, _ = counts.most_common(1)[0]
+
+    if report_count == 1:
+        return f"1 community report indicates a developing situation. Latest signal: {reports[-1].text}"
+
+    return (
+        f"{report_count} community reports indicate a developing situation in the same area. "
+        f"Most repeated signal: {most_common_text}"
+    )
+
+
+def _build_title(severity: SeverityLevel, report_count: int) -> str:
+    if severity in ("high", "critical"):
+        return "Potential high-priority incident"
+    if report_count >= 3:
+        return "Active community-reported situation"
+    if report_count >= 2:
+        return "Developing local situation"
+    return "Situation forming"
+
+
 def build_briefing(event: Event, reports: List[Report]) -> EventBriefing:
-    latest_report = reports[-1] if reports else None
-    latest_text = latest_report.text if latest_report else "Community reports indicate a developing situation."
-
-    severity_label, severity_score = _severity_from_text_and_count(
-        latest_text,
-        event.report_count,
-    )
-    confidence = _confidence_from_report_count(event.report_count)
-    tags = _extract_tags(latest_text)
-
-    title = event.title
-    if severity_label in ("high", "critical"):
-        title = "Potential high-priority incident"
-    elif event.report_count >= 3:
-        title = "Active community-reported situation"
-    elif event.report_count >= 2:
-        title = "Developing local situation"
-    else:
-        title = "Situation forming"
-
-    summary = (
-        f"{event.report_count} community report(s) indicate a developing situation near the reported area. "
-        f"Latest signal: {latest_text}"
-    )
-
+    severity_label, severity_score = _severity_from_reports(reports, event.report_count)
+    confidence = _confidence_from_reports(reports)
+    tags = _extract_tags_from_reports(reports)
+    title = _build_title(severity_label, event.report_count)
+    summary = _build_summary(reports, event.report_count)
     has_media = any(report.media_url for report in reports)
 
     briefing = EventBriefing(
@@ -161,7 +170,6 @@ def build_briefing(event: Event, reports: List[Report]) -> EventBriefing:
         ),
     )
 
-    # Keeping numeric event fields aligned with briefing
     event.title = title
     event.severity = severity_score
     event.confidence = confidence
