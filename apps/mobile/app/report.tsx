@@ -74,3 +74,38 @@ export default function ReportScreen() {
     </View>
   );
 }
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: "#0b1220"
+  },
+  label: {
+    color: "#e5e7eb",
+    marginBottom: 6,
+    marginTop: 12
+  },
+  input: {
+    backgroundColor: "#111827",
+    color: "#fff",
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#1f2937"
+  },
+  textArea: {
+    height: 140,
+    textAlignVertical: "top"
+  },
+  button: {
+    marginTop: 20,
+    backgroundColor: "#2563eb",
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: "center"
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "700"
+  }
+});
