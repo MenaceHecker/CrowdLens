@@ -73,6 +73,10 @@ class Event(BaseModel):
     last_seen_at: datetime
     trend: EventTrend = "new"
 
+    minutes_since_last_report: int = 0
+    is_recent: bool = True
+    report_velocity_per_hour: float = 0.0
+
     cell_id: str
     centroid: LatLng
 
