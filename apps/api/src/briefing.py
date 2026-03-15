@@ -133,6 +133,22 @@ def _build_summary(event: Event, reports: List[Report]) -> str:
     counts = Counter(normalized_texts)
     most_common_text, _ = counts.most_common(1)[0]
 
+    if event.status == "resolved":
+        return (
+            f"This incident appears resolved or stale. "
+            f"It accumulated {event.unique_report_count} unique reports and "
+            f"{event.duplicate_report_count} duplicate reports. "
+            f"Most repeated signal: {most_common_text}"
+        )
+
+    if event.status == "cooling_down":
+        return (
+            f"This incident appears to be cooling down. "
+            f"It accumulated {event.unique_report_count} unique reports and "
+            f"{event.duplicate_report_count} duplicate reports. "
+            f"Most repeated signal: {most_common_text}"
+        )
+
     if event.unique_report_count == 1:
         return f"1 unique community report indicates a newly observed situation. Latest signal: {reports[-1].text}"
 
@@ -148,7 +164,11 @@ def _build_summary(event: Event, reports: List[Report]) -> str:
     )
 
 
-def _build_title(severity: SeverityLevel, unique_report_count: int) -> str:
+def _build_title(event: Event, severity: SeverityLevel, unique_report_count: int) -> str:
+    if event.status == "resolved":
+        return "Resolved incident"
+    if event.status == "cooling_down":
+        return "Incident cooling down"
     if severity in ("high", "critical"):
         return "Potential high-priority incident"
     if unique_report_count >= 3:
@@ -164,7 +184,7 @@ def build_briefing(event: Event, reports: List[Report]) -> EventBriefing:
     severity_label, severity_score = _severity_from_reports(unique_reports, event.unique_report_count)
     confidence = _confidence_from_reports(event.unique_report_count, event.duplicate_report_count)
     tags = _extract_tags_from_reports(unique_reports or reports)
-    title = _build_title(severity_label, event.unique_report_count)
+    title = _build_title(event, severity_label, event.unique_report_count)
     summary = _build_summary(event, reports)
     has_media = any(report.media_url for report in reports)
 
