@@ -76,6 +76,7 @@ class Event(BaseModel):
     minutes_since_last_report: int = 0
     is_recent: bool = True
     report_velocity_per_hour: float = 0.0
+    ranking_score: float = 0.0
 
     cell_id: str
     centroid: LatLng
