@@ -44,6 +44,32 @@ def _report_velocity_per_hour(first_seen_at: datetime, last_seen_at: datetime, r
     return round(velocity, 2)
 
 
+def _ranking_score(event: Event) -> float:
+    severity_component = event.severity * 20.0
+    confidence_component = event.confidence * 30.0
+    recency_component = max(0.0, 25.0 - min(event.minutes_since_last_report, 25))
+    velocity_component = min(event.report_velocity_per_hour, 20.0) * 1.5
+
+    trend_bonus_map = {
+        "new": 4.0,
+        "growing": 10.0,
+        "stable": 6.0,
+    }
+    trend_component = trend_bonus_map.get(event.trend, 0.0)
+
+    status_bonus = 5.0 if event.status == "active" else 0.0
+
+    total = (
+        severity_component
+        + confidence_component
+        + recency_component
+        + velocity_component
+        + trend_component
+        + status_bonus
+    )
+    return round(total, 2)
+
+
 def _refresh_metrics(event: Event, now: datetime) -> None:
     event.minutes_since_last_report = _minutes_since(event.last_seen_at, now)
     event.is_recent = _is_recent(event.minutes_since_last_report)
@@ -52,6 +78,7 @@ def _refresh_metrics(event: Event, now: datetime) -> None:
         event.last_seen_at,
         event.report_count,
     )
+    event.ranking_score = _ranking_score(event)
 
 
 @dataclass
@@ -101,6 +128,7 @@ class InMemoryEventStore:
             minutes_since_last_report=0,
             is_recent=True,
             report_velocity_per_hour=1.0,
+            ranking_score=0.0,
             cell_id=cell,
             centroid=LatLng(lat=report.location.lat, lng=report.location.lng),
             report_ids=[report.id],
@@ -128,5 +156,12 @@ class InMemoryEventStore:
         items = [event for event in self.events.values() if event.status in ("forming", "active")]
         for event in items:
             _refresh_metrics(event, now)
-        items.sort(key=lambda event: event.updated_at, reverse=True)
+
+        items.sort(
+            key=lambda event: (
+                event.ranking_score,
+                event.updated_at,
+            ),
+            reverse=True,
+        )
         return items
