@@ -89,3 +89,57 @@ export default function FeedScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    gap: 12
+  },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12
+  },
+  button: {
+    backgroundColor: "#2563eb",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "600"
+  },
+  card: {
+    backgroundColor: "#111827",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#1f2937"
+  },
+  title: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 6
+  },
+  meta: {
+    color: "#cbd5e1",
+    fontSize: 13,
+    marginBottom: 4
+  },
+  summary: {
+    color: "#e5e7eb",
+    marginTop: 8,
+    lineHeight: 20
+  },
+  muted: {
+    color: "#94a3b8"
+  },
+  error: {
+    color: "#f87171"
+  }
+});
