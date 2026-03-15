@@ -20,10 +20,10 @@ def _centroid(reports: list[Report]) -> LatLng:
     return LatLng(lat=lat, lng=lng)
 
 
-def _derive_trend(report_count: int) -> str:
-    if report_count <= 1:
+def _derive_trend(unique_report_count: int) -> str:
+    if unique_report_count <= 1:
         return "new"
-    if report_count <= 3:
+    if unique_report_count <= 3:
         return "growing"
     return "stable"
 
@@ -37,10 +37,10 @@ def _is_recent(minutes_since_last_report: int) -> bool:
     return minutes_since_last_report <= 30
 
 
-def _report_velocity_per_hour(first_seen_at: datetime, last_seen_at: datetime, report_count: int) -> float:
+def _report_velocity_per_hour(first_seen_at: datetime, last_seen_at: datetime, unique_report_count: int) -> float:
     elapsed_seconds = max((last_seen_at - first_seen_at).total_seconds(), 60.0)
     elapsed_hours = elapsed_seconds / 3600.0
-    velocity = report_count / elapsed_hours
+    velocity = unique_report_count / elapsed_hours
     return round(velocity, 2)
 
 
@@ -58,6 +58,7 @@ def _ranking_score(event: Event) -> float:
     trend_component = trend_bonus_map.get(event.trend, 0.0)
 
     status_bonus = 5.0 if event.status == "active" else 0.0
+    duplicate_penalty = min(event.duplicate_report_count * 2.0, 10.0)
 
     total = (
         severity_component
@@ -66,6 +67,7 @@ def _ranking_score(event: Event) -> float:
         + velocity_component
         + trend_component
         + status_bonus
+        - duplicate_penalty
     )
     return round(total, 2)
 
@@ -76,9 +78,49 @@ def _refresh_metrics(event: Event, now: datetime) -> None:
     event.report_velocity_per_hour = _report_velocity_per_hour(
         event.first_seen_at,
         event.last_seen_at,
-        event.report_count,
+        max(event.unique_report_count, 1),
     )
     event.ranking_score = _ranking_score(event)
+
+
+def _normalize_text(text: str) -> str:
+    return " ".join(text.lower().strip().split())
+
+
+def _token_similarity(a: str, b: str) -> float:
+    a_tokens = set(_normalize_text(a).split())
+    b_tokens = set(_normalize_text(b).split())
+
+    if not a_tokens or not b_tokens:
+        return 0.0
+
+    overlap = len(a_tokens & b_tokens)
+    union = len(a_tokens | b_tokens)
+    return overlap / union
+
+
+def _within_duplicate_window(a: datetime, b: datetime, minutes: int = 15) -> bool:
+    delta_seconds = abs((a - b).total_seconds())
+    return delta_seconds <= minutes * 60
+
+
+def _find_duplicate_report(event: Event, candidate: Report, all_reports: Dict[str, Report]) -> Optional[str]:
+    for report_id in reversed(event.report_ids):
+        existing = all_reports.get(report_id)
+        if not existing:
+            continue
+
+        if existing.is_duplicate:
+            continue
+
+        if not _within_duplicate_window(existing.created_at, candidate.created_at):
+            continue
+
+        similarity = _token_similarity(existing.text, candidate.text)
+        if similarity >= 0.6:
+            return existing.id
+
+    return None
 
 
 @dataclass
@@ -97,19 +139,35 @@ class InMemoryEventStore:
         existing_event_id = self.cell_to_event.get(cell)
         if existing_event_id and existing_event_id in self.events:
             event = self.events[existing_event_id]
+
+            duplicate_of = _find_duplicate_report(event, report, all_reports)
+            if duplicate_of:
+                report.is_duplicate = True
+                report.duplicate_of = duplicate_of
+            else:
+                report.is_duplicate = False
+                report.duplicate_of = None
+
             if report.id not in event.report_ids:
                 event.report_ids.append(report.id)
 
             event.report_count = len(event.report_ids)
+            event.unique_report_count = len([rid for rid in event.report_ids if rid in all_reports and not all_reports[rid].is_duplicate])
+            event.duplicate_report_count = event.report_count - event.unique_report_count
+
             event.updated_at = now
             event.last_seen_at = now
-            event.trend = _derive_trend(event.report_count)
+            event.trend = _derive_trend(event.unique_report_count)
 
-            if event.report_count >= 3:
+            if event.unique_report_count >= 3:
                 event.status = "active"
 
-            linked = [all_reports[rid] for rid in event.report_ids if rid in all_reports]
-            event.centroid = _centroid(linked) if linked else event.centroid
+            unique_reports = [
+                all_reports[rid]
+                for rid in event.report_ids
+                if rid in all_reports and not all_reports[rid].is_duplicate
+            ]
+            event.centroid = _centroid(unique_reports) if unique_reports else event.centroid
 
             _refresh_metrics(event, now)
 
@@ -117,6 +175,9 @@ class InMemoryEventStore:
             return event, False
 
         eid = str(uuid4())
+        report.is_duplicate = False
+        report.duplicate_of = None
+
         event = Event(
             id=eid,
             status="forming",
@@ -133,6 +194,8 @@ class InMemoryEventStore:
             centroid=LatLng(lat=report.location.lat, lng=report.location.lng),
             report_ids=[report.id],
             report_count=1,
+            unique_report_count=1,
+            duplicate_report_count=0,
             confidence=0.5,
             severity=1,
             title="Situation forming",
