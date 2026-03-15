@@ -245,6 +245,7 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
                 "minutes_since_last_report": event.minutes_since_last_report,
                 "is_recent": event.is_recent,
                 "report_velocity_per_hour": event.report_velocity_per_hour,
+                "ranking_score": event.ranking_score,
             },
         )
 
