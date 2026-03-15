@@ -67,36 +67,39 @@ def _extract_tags_from_reports(reports: List[Report]) -> List[str]:
     return tags[:5]
 
 
-def _severity_from_reports(reports: List[Report], report_count: int) -> tuple[SeverityLevel, int]:
+def _severity_from_reports(reports: List[Report], unique_report_count: int) -> tuple[SeverityLevel, int]:
     combined = " ".join(_normalize_text(report.text) for report in reports)
 
     if any(keyword in combined for keyword in HIGH_SEVERITY_KEYWORDS):
-        if report_count >= 3:
+        if unique_report_count >= 3:
             return "critical", 5
         return "high", 4
 
     if any(keyword in combined for keyword in MEDIUM_SEVERITY_KEYWORDS):
-        if report_count >= 3:
+        if unique_report_count >= 3:
             return "high", 4
         return "medium", 3
 
-    if report_count >= 4:
+    if unique_report_count >= 4:
         return "medium", 3
 
     return "low", 1
 
 
-def _confidence_from_reports(reports: List[Report]) -> float:
-    report_count = len(reports)
-    if report_count <= 1:
-        return 0.52
-    if report_count == 2:
-        return 0.68
-    if report_count == 3:
-        return 0.8
-    if report_count == 4:
-        return 0.88
-    return 0.92
+def _confidence_from_reports(unique_report_count: int, duplicate_report_count: int) -> float:
+    if unique_report_count <= 1:
+        base = 0.52
+    elif unique_report_count == 2:
+        base = 0.68
+    elif unique_report_count == 3:
+        base = 0.8
+    elif unique_report_count == 4:
+        base = 0.88
+    else:
+        base = 0.92
+
+    duplicate_bonus = min(duplicate_report_count * 0.01, 0.04)
+    return min(round(base + duplicate_bonus, 2), 0.96)
 
 
 def _recommended_actions(severity: SeverityLevel, tags: List[str]) -> List[str]:
@@ -122,7 +125,7 @@ def _recommended_actions(severity: SeverityLevel, tags: List[str]) -> List[str]:
     return actions[:4]
 
 
-def _build_summary(event: Event, reports: List[Report], report_count: int) -> str:
+def _build_summary(event: Event, reports: List[Report]) -> str:
     if not reports:
         return "Community reports indicate a developing situation in the area."
 
@@ -130,37 +133,39 @@ def _build_summary(event: Event, reports: List[Report], report_count: int) -> st
     counts = Counter(normalized_texts)
     most_common_text, _ = counts.most_common(1)[0]
 
-    if report_count == 1:
-        return f"1 community report indicates a newly observed situation. Latest signal: {reports[-1].text}"
+    if event.unique_report_count == 1:
+        return f"1 unique community report indicates a newly observed situation. Latest signal: {reports[-1].text}"
 
     if event.trend == "growing":
         return (
-            f"{report_count} community reports are reinforcing the same situation in this area. "
-            f"Most repeated signal: {most_common_text}"
+            f"{event.unique_report_count} unique reports and {event.duplicate_report_count} duplicate reports "
+            f"are reinforcing the same situation in this area. Most repeated signal: {most_common_text}"
         )
 
     return (
-        f"{report_count} community reports indicate an ongoing situation in the same area. "
-        f"Most repeated signal: {most_common_text}"
+        f"{event.unique_report_count} unique reports and {event.duplicate_report_count} duplicate reports "
+        f"indicate an ongoing situation in the same area. Most repeated signal: {most_common_text}"
     )
 
 
-def _build_title(severity: SeverityLevel, report_count: int) -> str:
+def _build_title(severity: SeverityLevel, unique_report_count: int) -> str:
     if severity in ("high", "critical"):
         return "Potential high-priority incident"
-    if report_count >= 3:
+    if unique_report_count >= 3:
         return "Active community-reported situation"
-    if report_count >= 2:
+    if unique_report_count >= 2:
         return "Developing local situation"
     return "Situation forming"
 
 
 def build_briefing(event: Event, reports: List[Report]) -> EventBriefing:
-    severity_label, severity_score = _severity_from_reports(reports, event.report_count)
-    confidence = _confidence_from_reports(reports)
-    tags = _extract_tags_from_reports(reports)
-    title = _build_title(severity_label, event.report_count)
-    summary = _build_summary(event, reports, event.report_count)
+    unique_reports = [report for report in reports if not report.is_duplicate]
+
+    severity_label, severity_score = _severity_from_reports(unique_reports, event.unique_report_count)
+    confidence = _confidence_from_reports(event.unique_report_count, event.duplicate_report_count)
+    tags = _extract_tags_from_reports(unique_reports or reports)
+    title = _build_title(severity_label, event.unique_report_count)
+    summary = _build_summary(event, reports)
     has_media = any(report.media_url for report in reports)
 
     briefing = EventBriefing(
