@@ -35,6 +35,9 @@ class Report(BaseModel):
     status: ReportStatus = "submitted"
     media_url: Optional[str] = None
 
+    is_duplicate: bool = False
+    duplicate_of: Optional[str] = None
+
 
 class JobPayload(BaseModel):
     report_id: str
@@ -83,6 +86,8 @@ class Event(BaseModel):
 
     report_ids: List[str] = Field(default_factory=list)
     report_count: int = 0
+    unique_report_count: int = 0
+    duplicate_report_count: int = 0
 
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     severity: int = Field(default=1, ge=1, le=5)
