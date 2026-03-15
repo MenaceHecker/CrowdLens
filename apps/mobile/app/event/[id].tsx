@@ -87,3 +87,55 @@ export default function EventDetailScreen() {
     </ScrollView>
   );
 }
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#0b1220" },
+  content: { padding: 16, gap: 12 },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12
+  },
+  title: {
+    color: "#fff",
+    fontSize: 24,
+    fontWeight: "700"
+  },
+  meta: {
+    color: "#cbd5e1",
+    fontSize: 14
+  },
+  card: {
+    backgroundColor: "#111827",
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#1f2937"
+  },
+  sectionTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 8
+  },
+  body: {
+    color: "#e5e7eb",
+    lineHeight: 20
+  },
+  reportItem: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#1f2937"
+  },
+  reportMeta: {
+    color: "#94a3b8",
+    marginTop: 4,
+    fontSize: 12
+  },
+  muted: {
+    color: "#94a3b8"
+  },
+  error: {
+    color: "#f87171"
+  }
+});
