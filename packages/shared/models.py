@@ -9,7 +9,7 @@ from packages.shared.briefing import EventBriefing
 ReportStatus = Literal["submitted", "queued", "processing", "ready", "failed"]
 JobType = Literal["report_created"]
 JobStatus = Literal["queued", "processing", "done", "failed"]
-EventStatus = Literal["forming", "active", "resolved"]
+EventStatus = Literal["forming", "active", "cooling_down", "resolved"]
 EventTrend = Literal["new", "growing", "stable"]
 
 
@@ -71,6 +71,7 @@ class Event(BaseModel):
     status: EventStatus
     created_at: datetime
     updated_at: datetime
+    resolved_at: Optional[datetime] = None
 
     first_seen_at: datetime
     last_seen_at: datetime
