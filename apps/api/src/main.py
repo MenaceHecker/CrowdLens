@@ -238,6 +238,8 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
                 "event_created": created,
                 "report_id": report.id,
                 "cell": event.cell_id,
+                "status": event.status,
+                "resolved_at": event.resolved_at.isoformat() if event.resolved_at else None,
                 "report_count": event.report_count,
                 "unique_report_count": event.unique_report_count,
                 "duplicate_report_count": event.duplicate_report_count,
