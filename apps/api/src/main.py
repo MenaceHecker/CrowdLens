@@ -242,6 +242,9 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
                 "trend": event.trend,
                 "first_seen_at": event.first_seen_at.isoformat(),
                 "last_seen_at": event.last_seen_at.isoformat(),
+                "minutes_since_last_report": event.minutes_since_last_report,
+                "is_recent": event.is_recent,
+                "report_velocity_per_hour": event.report_velocity_per_hour,
             },
         )
 
