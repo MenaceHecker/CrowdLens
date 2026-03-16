@@ -3,7 +3,7 @@ import traceback
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import FastAPI, Request, HTTPException, Response
+from fastapi import FastAPI, Request, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,7 @@ from packages.core.logging import setup_logging
 from apps.api.src.job_queue import InMemoryJobQueue
 from apps.api.src.events import InMemoryEventStore
 from apps.api.src.briefing import build_briefing
+from apps.api.src.ws import WebSocketManager
 
 
 setup_logging(service="api", level=settings.LOG_LEVEL)
@@ -33,6 +34,7 @@ JOB_QUEUE = InMemoryJobQueue()
 EVENTS = InMemoryEventStore()
 REPORT_TO_EVENT: dict[str, str] = {}
 LAST_ERROR: dict | None = None
+WS_MANAGER = WebSocketManager()
 
 
 class UpsertFromReportRequest(BaseModel):
@@ -206,7 +208,7 @@ def fail_job(job_id: str, req: JobResultRequest):
 
 
 @app.post("/events/upsert-from-report", response_model=UpsertFromReportResponse)
-def upsert_event_from_report(req: UpsertFromReportRequest):
+async def upsert_event_from_report(req: UpsertFromReportRequest):
     global LAST_ERROR
 
     try:
@@ -254,6 +256,9 @@ def upsert_event_from_report(req: UpsertFromReportRequest):
                 "ranking_score": event.ranking_score,
             },
         )
+
+        await WS_MANAGER.broadcast_feed_updated()
+        await WS_MANAGER.broadcast_event_updated(event.id)
 
         return UpsertFromReportResponse(event_id=event.id, created=created)
 
@@ -322,3 +327,27 @@ def get_event_reports(event_id: str):
 
     reports.sort(key=lambda report: report.created_at)
     return reports
+
+
+@app.websocket("/ws/feed")
+async def websocket_feed(websocket: WebSocket):
+    await WS_MANAGER.connect_feed(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        WS_MANAGER.disconnect_feed(websocket)
+    except Exception:
+        WS_MANAGER.disconnect_feed(websocket)
+
+
+@app.websocket("/ws/events/{event_id}")
+async def websocket_event(event_id: str, websocket: WebSocket):
+    await WS_MANAGER.connect_event(event_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        WS_MANAGER.disconnect_event(event_id, websocket)
+    except Exception:
+        WS_MANAGER.disconnect_event(event_id, websocket)
