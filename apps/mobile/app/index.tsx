@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
@@ -11,6 +11,8 @@ import {
 } from "react-native";
 
 import { getFeed } from "../src/api/client";
+import { EventCard } from "../src/components/EventCard";
+import { colors, radius, spacing } from "../src/styles/theme";
 import { FeedItem } from "../src/types/api";
 
 export default function FeedScreen() {
@@ -36,6 +38,12 @@ export default function FeedScreen() {
     loadFeed();
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadFeed();
+    }, [])
+  );
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -47,44 +55,48 @@ export default function FeedScreen() {
 
   return (
     <View style={styles.container}>
-      <Link href="/report" asChild>
-        <Pressable style={styles.button}>
-          <Text style={styles.buttonText}>Submit Report</Text>
-        </Pressable>
-      </Link>
+      <View style={styles.topBar}>
+        <View>
+          <Text style={styles.heading}>Live Incident Feed</Text>
+          <Text style={styles.subheading}>Ranked by severity, confidence, freshness, and velocity</Text>
+        </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Link href="/report" asChild>
+          <Pressable style={styles.button}>
+            <Text style={styles.buttonText}>+ Report</Text>
+          </Pressable>
+        </Link>
+      </View>
+
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorTitle}>Couldn’t load the feed</Text>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
 
       <FlatList
         data={items}
         keyExtractor={(item) => item.event.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {
-          setRefreshing(true);
-          loadFeed();
-        }} />}
-        ListEmptyComponent={<Text style={styles.muted}>No events yet.</Text>}
-        renderItem={({ item }) => (
-          <Link href={`/event/${item.event.id}`} asChild>
-            <Pressable style={styles.card}>
-              <Text style={styles.title}>{item.event.title}</Text>
-              <Text style={styles.meta}>
-                Status: {item.event.status} · Trend: {item.event.trend}
-              </Text>
-              <Text style={styles.meta}>
-                Severity: {item.event.severity} · Confidence: {item.event.confidence}
-              </Text>
-              <Text style={styles.meta}>
-                Unique: {item.event.unique_report_count} · Duplicates: {item.event.duplicate_report_count}
-              </Text>
-              <Text style={styles.meta}>
-                Ranking: {item.event.ranking_score} · Recent: {String(item.event.is_recent)}
-              </Text>
-              <Text style={styles.summary} numberOfLines={3}>
-                {item.event.briefing?.summary ?? "No briefing available."}
-              </Text>
-            </Pressable>
-          </Link>
-        )}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadFeed();
+            }}
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyTitle}>No incidents yet</Text>
+            <Text style={styles.emptyText}>
+              Submit a report to create the first event in the feed.
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => <EventCard item={item} />}
+        contentContainerStyle={styles.listContent}
       />
     </View>
   );
@@ -93,53 +105,80 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    gap: 12
+    backgroundColor: colors.bg,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md
+  },
+  listContent: {
+    paddingBottom: spacing.xl
+  },
+  topBar: {
+    marginBottom: spacing.md,
+    gap: spacing.sm
+  },
+  heading: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "800"
+  },
+  subheading: {
+    color: colors.textMuted,
+    marginTop: 4,
+    lineHeight: 18
+  },
+  button: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: radius.md
+  },
+  buttonText: {
+    color: colors.text,
+    fontWeight: "700"
   },
   center: {
     flex: 1,
+    backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    gap: 12
+    gap: spacing.sm
   },
-  button: {
-    backgroundColor: "#2563eb",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10
+  muted: {
+    color: colors.textMuted
   },
-  buttonText: {
-    color: "#fff",
-    fontWeight: "600"
-  },
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
+  errorBox: {
+    backgroundColor: "#2a0f14",
     borderWidth: 1,
-    borderColor: "#1f2937"
+    borderColor: "#7f1d1d",
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md
   },
-  title: {
-    color: "#fff",
+  errorTitle: {
+    color: "#fecaca",
+    fontWeight: "700",
+    marginBottom: 4
+  },
+  errorText: {
+    color: "#fca5a5"
+  },
+  emptyBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginTop: spacing.lg
+  },
+  emptyTitle: {
+    color: colors.text,
     fontSize: 18,
     fontWeight: "700",
     marginBottom: 6
   },
-  meta: {
-    color: "#cbd5e1",
-    fontSize: 13,
-    marginBottom: 4
-  },
-  summary: {
-    color: "#e5e7eb",
-    marginTop: 8,
+  emptyText: {
+    color: colors.textMuted,
     lineHeight: 20
-  },
-  muted: {
-    color: "#94a3b8"
-  },
-  error: {
-    color: "#f87171"
   }
 });
