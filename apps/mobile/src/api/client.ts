@@ -36,12 +36,6 @@ export async function createReport(payload: CreateReportRequest): Promise<Report
   });
 }
 
-/**
- * Dev only convenience action.
- * This assumes the worker is reachable from the device.
- * If there are network issues with this endpoint on mobile,
- * keep using terminal curl for worker processing
- */
 export async function processNextJob(): Promise<{ ok: boolean; ran: boolean; reason?: string; job_id?: string }> {
   const workerBase =
     process.env.EXPO_PUBLIC_WORKER_BASE || API_BASE.replace(":8000", ":8001");
