@@ -11,6 +11,7 @@ import {
 } from "react-native";
 
 import { getFeed, processNextJob } from "../src/api/client";
+import { WS_BASE } from "../src/api/config";
 import { EventCard } from "../src/components/EventCard";
 import { colors, radius, spacing } from "../src/styles/theme";
 import { FeedItem } from "../src/types/api";
@@ -23,7 +24,9 @@ export default function FeedScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [processingJob, setProcessingJob] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
 
   const loadFeed = async (silent = false) => {
     try {
@@ -44,6 +47,41 @@ export default function FeedScreen() {
       setRefreshing(false);
     }
   };
+
+  const connectWebSocket = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.close();
+    }
+
+    const ws = new WebSocket(`${WS_BASE}/ws/feed`);
+    socketRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "feed_updated") {
+          loadFeed(true);
+        }
+      } catch {
+        // ignore malformed messages
+      }
+    };
+
+    ws.onerror = () => {
+      // polling remains as fallback
+    };
+
+    ws.onclose = () => {
+      socketRef.current = null;
+    };
+  }, []);
+
+  const disconnectWebSocket = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  }, []);
 
   const startPolling = useCallback(() => {
     if (intervalRef.current) {
@@ -78,21 +116,25 @@ export default function FeedScreen() {
   useEffect(() => {
     loadFeed();
     startPolling();
+    connectWebSocket();
 
     return () => {
       stopPolling();
+      disconnectWebSocket();
     };
-  }, [startPolling, stopPolling]);
+  }, [startPolling, stopPolling, connectWebSocket, disconnectWebSocket]);
 
   useFocusEffect(
     useCallback(() => {
       loadFeed(true);
       startPolling();
+      connectWebSocket();
 
       return () => {
         stopPolling();
+        disconnectWebSocket();
       };
-    }, [startPolling, stopPolling])
+    }, [startPolling, stopPolling, connectWebSocket, disconnectWebSocket])
   );
 
   if (loading) {
@@ -134,7 +176,7 @@ export default function FeedScreen() {
       </View>
 
       <View style={styles.pollingBox}>
-        <Text style={styles.pollingText}>Auto-refresh: every 8 seconds</Text>
+        <Text style={styles.pollingText}>Realtime enabled · polling fallback every 8 seconds</Text>
       </View>
 
       {error ? (
