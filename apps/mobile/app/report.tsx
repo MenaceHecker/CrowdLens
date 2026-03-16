@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { createReport } from "../src/api/client";
+import { colors, radius, spacing } from "../src/styles/theme";
 
 export default function ReportScreen() {
   const [text, setText] = useState("");
@@ -27,7 +28,10 @@ export default function ReportScreen() {
         }
       });
 
-      Alert.alert("Success", "Report submitted.");
+      Alert.alert(
+        "Report submitted",
+        "Your report was queued successfully. Run the worker locally to process it."
+      );
       router.replace("/");
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to submit report");
@@ -38,33 +42,44 @@ export default function ReportScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Report Text</Text>
+      <Text style={styles.heading}>Submit Incident Report</Text>
+      <Text style={styles.subheading}>
+        Send a local test report to the CrowdLens backend.
+      </Text>
+
+      <Text style={styles.label}>What did you observe?</Text>
       <TextInput
         style={[styles.input, styles.textArea]}
         placeholder="Describe what you observed..."
-        placeholderTextColor="#64748b"
+        placeholderTextColor={colors.textMuted}
         multiline
         value={text}
         onChangeText={setText}
       />
 
-      <Text style={styles.label}>Latitude</Text>
-      <TextInput
-        style={styles.input}
-        value={lat}
-        onChangeText={setLat}
-        keyboardType="numeric"
-        placeholderTextColor="#64748b"
-      />
+      <View style={styles.row}>
+        <View style={styles.col}>
+          <Text style={styles.label}>Latitude</Text>
+          <TextInput
+            style={styles.input}
+            value={lat}
+            onChangeText={setLat}
+            keyboardType="numeric"
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
 
-      <Text style={styles.label}>Longitude</Text>
-      <TextInput
-        style={styles.input}
-        value={lng}
-        onChangeText={setLng}
-        keyboardType="numeric"
-        placeholderTextColor="#64748b"
-      />
+        <View style={styles.col}>
+          <Text style={styles.label}>Longitude</Text>
+          <TextInput
+            style={styles.input}
+            value={lng}
+            onChangeText={setLng}
+            keyboardType="numeric"
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
+      </View>
 
       <Pressable style={styles.button} onPress={onSubmit} disabled={submitting}>
         <Text style={styles.buttonText}>
@@ -74,38 +89,58 @@ export default function ReportScreen() {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: "#0b1220"
+    backgroundColor: colors.bg,
+    padding: spacing.md
+  },
+  heading: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "800",
+    marginBottom: 6
+  },
+  subheading: {
+    color: colors.textMuted,
+    marginBottom: spacing.lg,
+    lineHeight: 20
   },
   label: {
-    color: "#e5e7eb",
+    color: colors.textSoft,
     marginBottom: 6,
-    marginTop: 12
+    marginTop: 10,
+    fontWeight: "600"
   },
   input: {
-    backgroundColor: "#111827",
-    color: "#fff",
+    backgroundColor: colors.surface,
+    color: colors.text,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "#1f2937"
+    borderColor: colors.border
   },
   textArea: {
     height: 140,
     textAlignVertical: "top"
   },
+  row: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  col: {
+    flex: 1
+  },
   button: {
-    marginTop: 20,
-    backgroundColor: "#2563eb",
+    marginTop: spacing.xl,
+    backgroundColor: colors.primary,
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: radius.md,
     alignItems: "center"
   },
   buttonText: {
-    color: "#fff",
-    fontWeight: "700"
+    color: colors.text,
+    fontWeight: "800"
   }
 });
