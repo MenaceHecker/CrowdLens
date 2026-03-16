@@ -1,6 +1,5 @@
+import { API_BASE } from "./config";
 import { CreateReportRequest, Event, FeedItem, Report } from "../types/api";
-
-const API_BASE = "http://localhost:8000";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
