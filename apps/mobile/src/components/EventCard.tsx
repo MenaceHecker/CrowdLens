@@ -86,3 +86,71 @@ export function EventCard({ item }: EventCardProps) {
     </Link>
   );
 }
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    alignItems: "flex-start",
+    marginBottom: spacing.sm
+  },
+  title: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "700"
+  },
+  rank: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  badgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginBottom: spacing.sm
+  },
+  summary: {
+    color: colors.textSoft,
+    lineHeight: 20,
+    marginBottom: spacing.md
+  },
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginBottom: spacing.sm
+  },
+  metricBox: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    minWidth: 90,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  metricLabel: {
+    color: colors.textMuted,
+    fontSize: 12
+  },
+  metricValue: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 2
+  },
+  footer: {
+    color: colors.textMuted,
+    fontSize: 12
+  }
+});
