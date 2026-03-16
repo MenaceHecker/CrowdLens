@@ -3,7 +3,34 @@ import { useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getEvent, getEventReports } from "../../src/api/client";
+import { Badge } from "../../src/components/Badge";
+import { SectionCard } from "../../src/components/SectionCard";
+import { colors, radius, spacing } from "../../src/styles/theme";
 import { Event, Report } from "../../src/types/api";
+
+function statusTone(status: string) {
+  switch (status) {
+    case "active":
+      return "red";
+    case "cooling_down":
+      return "yellow";
+    case "resolved":
+      return "gray";
+    default:
+      return "blue";
+  }
+}
+
+function trendTone(trend: string) {
+  switch (trend) {
+    case "growing":
+      return "purple";
+    case "stable":
+      return "teal";
+    default:
+      return "blue";
+  }
+}
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -53,87 +80,168 @@ export default function EventDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>{event.title}</Text>
-      <Text style={styles.meta}>Status: {event.status}</Text>
-      <Text style={styles.meta}>Trend: {event.trend}</Text>
-      <Text style={styles.meta}>Ranking: {event.ranking_score}</Text>
-      <Text style={styles.meta}>Velocity/hr: {event.report_velocity_per_hour}</Text>
-      <Text style={styles.meta}>Minutes since last report: {event.minutes_since_last_report}</Text>
+      <View style={styles.hero}>
+        <Text style={styles.title}>{event.title}</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Briefing</Text>
-        <Text style={styles.body}>{event.briefing?.summary ?? "No summary available."}</Text>
+        <View style={styles.badgeRow}>
+          <Badge label={event.status} tone={statusTone(event.status) as any} />
+          <Badge label={event.trend} tone={trendTone(event.trend) as any} />
+          <Badge label={`score ${event.ranking_score}`} tone="blue" />
+        </View>
+
+        <Text style={styles.heroSummary}>
+          {event.briefing?.summary ?? "No summary available."}
+        </Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Recommended Actions</Text>
+      <SectionCard title="Live Metrics">
+        <View style={styles.metricsGrid}>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Severity</Text>
+            <Text style={styles.metricValue}>{event.severity}</Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Confidence</Text>
+            <Text style={styles.metricValue}>{event.confidence}</Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Unique</Text>
+            <Text style={styles.metricValue}>{event.unique_report_count}</Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Duplicates</Text>
+            <Text style={styles.metricValue}>{event.duplicate_report_count}</Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Velocity/hr</Text>
+            <Text style={styles.metricValue}>{event.report_velocity_per_hour}</Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Last signal</Text>
+            <Text style={styles.metricValue}>{event.minutes_since_last_report}m</Text>
+          </View>
+        </View>
+      </SectionCard>
+
+      <SectionCard title="Recommended Actions">
         {(event.briefing?.recommended_actions ?? []).map((action) => (
-          <Text key={action} style={styles.body}>• {action}</Text>
+          <Text key={action} style={styles.body}>
+            • {action}
+          </Text>
         ))}
-      </View>
+      </SectionCard>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Source Reports</Text>
+      <SectionCard title="Tags">
+        <View style={styles.badgeRow}>
+          {(event.briefing?.tags ?? []).map((tag) => (
+            <Badge key={tag} label={tag} tone="teal" />
+          ))}
+        </View>
+      </SectionCard>
+
+      <SectionCard title="Source Reports">
         {reports.map((report) => (
           <View key={report.id} style={styles.reportItem}>
-            <Text style={styles.body}>{report.text}</Text>
-            <Text style={styles.reportMeta}>
-              duplicate: {String(report.is_duplicate)}
-              {report.duplicate_of ? ` · duplicate_of: ${report.duplicate_of}` : ""}
-            </Text>
+            <Text style={styles.reportText}>{report.text}</Text>
+            <View style={styles.badgeRow}>
+              <Badge label={report.is_duplicate ? "duplicate" : "unique"} tone={report.is_duplicate ? "yellow" : "green"} />
+            </View>
+            {report.duplicate_of ? (
+              <Text style={styles.reportMeta}>duplicate_of: {report.duplicate_of}</Text>
+            ) : null}
           </View>
         ))}
-      </View>
+      </SectionCard>
     </ScrollView>
   );
 }
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0b1220" },
-  content: { padding: 16, gap: 12 },
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg
+  },
+  content: {
+    padding: spacing.md,
+    gap: spacing.md,
+    paddingBottom: spacing.xl
+  },
   center: {
     flex: 1,
+    backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    gap: 12
+    gap: spacing.sm
+  },
+  hero: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg
   },
   title: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 24,
-    fontWeight: "700"
+    fontWeight: "800",
+    marginBottom: spacing.sm
   },
-  meta: {
-    color: "#cbd5e1",
-    fontSize: 14
+  heroSummary: {
+    color: colors.textSoft,
+    lineHeight: 22,
+    marginTop: spacing.sm
   },
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 14,
-    padding: 14,
+  badgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs
+  },
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  metricBox: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "#1f2937"
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    minWidth: 100
   },
-  sectionTitle: {
-    color: "#fff",
-    fontSize: 16,
+  metricLabel: {
+    color: colors.textMuted,
+    fontSize: 12
+  },
+  metricValue: {
+    color: colors.text,
+    fontSize: 15,
     fontWeight: "700",
-    marginBottom: 8
+    marginTop: 2
   },
   body: {
-    color: "#e5e7eb",
+    color: colors.textSoft,
     lineHeight: 20
   },
   reportItem: {
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1f2937"
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm
+  },
+  reportText: {
+    color: colors.text,
+    lineHeight: 20
   },
   reportMeta: {
-    color: "#94a3b8",
-    marginTop: 4,
+    color: colors.textMuted,
     fontSize: 12
   },
   muted: {
-    color: "#94a3b8"
+    color: colors.textMuted
   },
   error: {
     color: "#f87171"
