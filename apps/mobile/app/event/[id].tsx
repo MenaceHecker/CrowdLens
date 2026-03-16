@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getEvent, getEventReports } from "../../src/api/client";
@@ -7,6 +7,8 @@ import { Badge } from "../../src/components/Badge";
 import { SectionCard } from "../../src/components/SectionCard";
 import { colors, radius, spacing } from "../../src/styles/theme";
 import { Event, Report } from "../../src/types/api";
+
+const POLL_INTERVAL_MS = 8000;
 
 function statusTone(status: string) {
   switch (status) {
@@ -38,28 +40,72 @@ export default function EventDetailScreen() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const loadEvent = async () => {
+  const loadEvent = async (silent = false) => {
     if (!id) return;
 
     try {
-      setError(null);
+      if (!silent) {
+        setError(null);
+      }
+
       const [eventData, reportData] = await Promise.all([
         getEvent(id),
         getEventReports(id)
       ]);
+
       setEvent(eventData);
       setReports(reportData);
+
+      if (!silent) {
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load event");
+      if (!silent) {
+        setError(err instanceof Error ? err.message : "Failed to load event");
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const startPolling = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    intervalRef.current = setInterval(() => {
+      loadEvent(true);
+    }, POLL_INTERVAL_MS);
+  }, [id]);
+
+  const stopPolling = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     loadEvent();
-  }, [id]);
+    startPolling();
+
+    return () => {
+      stopPolling();
+    };
+  }, [id, startPolling, stopPolling]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadEvent(true);
+      startPolling();
+
+      return () => {
+        stopPolling();
+      };
+    }, [id, startPolling, stopPolling])
+  );
 
   if (loading) {
     return (
@@ -80,6 +126,10 @@ export default function EventDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.pollingBox}>
+        <Text style={styles.pollingText}>Auto-refresh: every 8 seconds</Text>
+      </View>
+
       <View style={styles.hero}>
         <Text style={styles.title}>{event.title}</Text>
 
@@ -144,7 +194,10 @@ export default function EventDetailScreen() {
           <View key={report.id} style={styles.reportItem}>
             <Text style={styles.reportText}>{report.text}</Text>
             <View style={styles.badgeRow}>
-              <Badge label={report.is_duplicate ? "duplicate" : "unique"} tone={report.is_duplicate ? "yellow" : "green"} />
+              <Badge
+                label={report.is_duplicate ? "duplicate" : "unique"}
+                tone={report.is_duplicate ? "yellow" : "green"}
+              />
             </View>
             {report.duplicate_of ? (
               <Text style={styles.reportMeta}>duplicate_of: {report.duplicate_of}</Text>
@@ -172,6 +225,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.sm
+  },
+  pollingBox: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md
+  },
+  pollingText: {
+    color: colors.textMuted,
+    fontSize: 12
   },
   hero: {
     backgroundColor: colors.surface,
