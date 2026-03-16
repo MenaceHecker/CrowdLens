@@ -3,6 +3,7 @@ import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getEvent, getEventReports } from "../../src/api/client";
+import { WS_BASE } from "../../src/api/config";
 import { Badge } from "../../src/components/Badge";
 import { SectionCard } from "../../src/components/SectionCard";
 import { colors, radius, spacing } from "../../src/styles/theme";
@@ -40,7 +41,9 @@ export default function EventDetailScreen() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
 
   const loadEvent = async (silent = false) => {
     if (!id) return;
@@ -70,6 +73,43 @@ export default function EventDetailScreen() {
     }
   };
 
+  const connectWebSocket = useCallback(() => {
+    if (!id) return;
+
+    if (socketRef.current) {
+      socketRef.current.close();
+    }
+
+    const ws = new WebSocket(`${WS_BASE}/ws/events/${id}`);
+    socketRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "event_updated" && payload.event_id === id) {
+          loadEvent(true);
+        }
+      } catch {
+        // ignore malformed messages
+      }
+    };
+
+    ws.onerror = () => {
+      // polling remains as fallback
+    };
+
+    ws.onclose = () => {
+      socketRef.current = null;
+    };
+  }, [id]);
+
+  const disconnectWebSocket = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  }, []);
+
   const startPolling = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -90,21 +130,25 @@ export default function EventDetailScreen() {
   useEffect(() => {
     loadEvent();
     startPolling();
+    connectWebSocket();
 
     return () => {
       stopPolling();
+      disconnectWebSocket();
     };
-  }, [id, startPolling, stopPolling]);
+  }, [id, startPolling, stopPolling, connectWebSocket, disconnectWebSocket]);
 
   useFocusEffect(
     useCallback(() => {
       loadEvent(true);
       startPolling();
+      connectWebSocket();
 
       return () => {
         stopPolling();
+        disconnectWebSocket();
       };
-    }, [id, startPolling, stopPolling])
+    }, [id, startPolling, stopPolling, connectWebSocket, disconnectWebSocket])
   );
 
   if (loading) {
@@ -127,7 +171,7 @@ export default function EventDetailScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.pollingBox}>
-        <Text style={styles.pollingText}>Auto-refresh: every 8 seconds</Text>
+        <Text style={styles.pollingText}>Realtime enabled · polling fallback every 8 seconds</Text>
       </View>
 
       <View style={styles.hero}>
