@@ -2,7 +2,7 @@ import { useState } from "react";
 import { router } from "expo-router";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { createReport } from "../src/api/client";
+import { createReport, processNextJob } from "../src/api/client";
 import { colors, radius, spacing } from "../src/styles/theme";
 
 export default function ReportScreen() {
@@ -10,8 +10,9 @@ export default function ReportScreen() {
   const [lat, setLat] = useState("33.7756");
   const [lng, setLng] = useState("-84.3963");
   const [submitting, setSubmitting] = useState(false);
+  const [submitAndProcess, setSubmitAndProcess] = useState(false);
 
-  const onSubmit = async () => {
+  const submit = async (alsoProcess: boolean) => {
     if (!text.trim()) {
       Alert.alert("Missing text", "Please enter a report.");
       return;
@@ -19,6 +20,7 @@ export default function ReportScreen() {
 
     try {
       setSubmitting(true);
+      setSubmitAndProcess(alsoProcess);
 
       await createReport({
         text: text.trim(),
@@ -28,15 +30,25 @@ export default function ReportScreen() {
         }
       });
 
-      Alert.alert(
-        "Report submitted",
-        "Your report was queued successfully. Run the worker locally to process it."
-      );
+      if (alsoProcess) {
+        await processNextJob();
+        Alert.alert(
+          "Success",
+          "Report submitted and one queued job was processed."
+        );
+      } else {
+        Alert.alert(
+          "Report submitted",
+          "Your report was queued successfully."
+        );
+      }
+
       router.replace("/");
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to submit report");
     } finally {
       setSubmitting(false);
+      setSubmitAndProcess(false);
     }
   };
 
@@ -46,6 +58,13 @@ export default function ReportScreen() {
       <Text style={styles.subheading}>
         Send a local test report to the CrowdLens backend.
       </Text>
+
+      <View style={styles.devNotice}>
+        <Text style={styles.devNoticeTitle}>Dev convenience</Text>
+        <Text style={styles.devNoticeText}>
+          “Submit & Process Locally” will submit the report and call the worker once.
+        </Text>
+      </View>
 
       <Text style={styles.label}>What did you observe?</Text>
       <TextInput
@@ -81,11 +100,27 @@ export default function ReportScreen() {
         </View>
       </View>
 
-      <Pressable style={styles.button} onPress={onSubmit} disabled={submitting}>
-        <Text style={styles.buttonText}>
-          {submitting ? "Submitting..." : "Submit Report"}
-        </Text>
-      </Pressable>
+      <View style={styles.actions}>
+        <Pressable
+          style={[styles.button, styles.secondaryButton]}
+          onPress={() => submit(false)}
+          disabled={submitting}
+        >
+          <Text style={styles.secondaryButtonText}>
+            {submitting && !submitAndProcess ? "Submitting..." : "Submit Only"}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.button, styles.primaryButton]}
+          onPress={() => submit(true)}
+          disabled={submitting}
+        >
+          <Text style={styles.primaryButtonText}>
+            {submitting && submitAndProcess ? "Submitting..." : "Submit & Process Locally"}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -105,6 +140,23 @@ const styles = StyleSheet.create({
   subheading: {
     color: colors.textMuted,
     marginBottom: spacing.lg,
+    lineHeight: 20
+  },
+  devNotice: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md
+  },
+  devNoticeTitle: {
+    color: colors.text,
+    fontWeight: "700",
+    marginBottom: 4
+  },
+  devNoticeText: {
+    color: colors.textMuted,
     lineHeight: 20
   },
   label: {
@@ -132,15 +184,29 @@ const styles = StyleSheet.create({
   col: {
     flex: 1
   },
-  button: {
+  actions: {
     marginTop: spacing.xl,
-    backgroundColor: colors.primary,
+    gap: spacing.sm
+  },
+  button: {
     paddingVertical: 14,
     borderRadius: radius.md,
     alignItems: "center"
   },
-  buttonText: {
+  primaryButton: {
+    backgroundColor: colors.primary
+  },
+  secondaryButton: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  primaryButtonText: {
     color: colors.text,
+    fontWeight: "800"
+  },
+  secondaryButtonText: {
+    color: colors.textSoft,
     fontWeight: "800"
   }
 });
