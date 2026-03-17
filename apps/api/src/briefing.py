@@ -1,208 +1,111 @@
-from collections import Counter
+import json
+import logging
 from typing import List
 
-from packages.shared.briefing import EventBriefing, BriefingSourceStats, SeverityLevel
+from google import genai
+
+from packages.core.config import settings
+from packages.shared.briefing import EventBriefing
 from packages.shared.models import Event, Report
+from apps.api.src.briefing_fallback import build_fallback_briefing
+
+logger = logging.getLogger("api")
 
 
-HIGH_SEVERITY_KEYWORDS = {
-    "fire",
-    "explosion",
-    "shooting",
-    "gun",
-    "gunshot",
-    "crash",
-    "collision",
-    "accident",
-    "injury",
-    "injured",
-    "ambulance",
-    "emergency",
-    "police",
-    "flood",
-    "collapsed",
-    "collapse",
-    "earthquake",
-    "downed power line",
-    "power outage",
-}
-
-MEDIUM_SEVERITY_KEYWORDS = {
-    "traffic",
-    "congestion",
-    "road closed",
-    "delay",
-    "outage",
-    "smoke",
-    "crowd",
-    "protest",
-    "sirens",
-    "blocked",
-    "hazard",
-    "weather",
-}
-
-
-def _normalize_text(text: str) -> str:
-    return " ".join(text.lower().strip().split())
-
-
-def _extract_tags_from_reports(reports: List[Report]) -> List[str]:
-    combined = " ".join(_normalize_text(report.text) for report in reports)
-    tags: List[str] = []
-
-    tag_rules = [
-        ("traffic", ["traffic", "congestion", "intersection", "road", "blocked", "accident", "crash"]),
-        ("power", ["power outage", "outage", "downed power line"]),
-        ("fire", ["fire", "smoke", "explosion"]),
-        ("medical", ["injury", "injured", "ambulance", "emergency"]),
-        ("police", ["police", "sirens", "shooting", "gun", "gunshot"]),
-        ("weather", ["flood", "storm", "weather", "rain"]),
-    ]
-
-    for tag, keywords in tag_rules:
-        if any(keyword in combined for keyword in keywords):
-            tags.append(tag)
-
-    return tags[:5]
-
-
-def _severity_from_reports(reports: List[Report], unique_report_count: int) -> tuple[SeverityLevel, int]:
-    combined = " ".join(_normalize_text(report.text) for report in reports)
-
-    if any(keyword in combined for keyword in HIGH_SEVERITY_KEYWORDS):
-        if unique_report_count >= 3:
-            return "critical", 5
-        return "high", 4
-
-    if any(keyword in combined for keyword in MEDIUM_SEVERITY_KEYWORDS):
-        if unique_report_count >= 3:
-            return "high", 4
-        return "medium", 3
-
-    if unique_report_count >= 4:
-        return "medium", 3
-
-    return "low", 1
-
-
-def _confidence_from_reports(unique_report_count: int, duplicate_report_count: int) -> float:
-    if unique_report_count <= 1:
-        base = 0.52
-    elif unique_report_count == 2:
-        base = 0.68
-    elif unique_report_count == 3:
-        base = 0.8
-    elif unique_report_count == 4:
-        base = 0.88
-    else:
-        base = 0.92
-
-    duplicate_bonus = min(duplicate_report_count * 0.01, 0.04)
-    return min(round(base + duplicate_bonus, 2), 0.96)
-
-
-def _recommended_actions(severity: SeverityLevel, tags: List[str]) -> List[str]:
-    actions: List[str] = []
-
-    if "traffic" in tags:
-        actions.append("Avoid the immediate area and expect delays.")
-    if "power" in tags:
-        actions.append("Use caution around affected infrastructure and dark intersections.")
-    if "fire" in tags:
-        actions.append("Keep distance from the area and follow local emergency guidance.")
-    if "medical" in tags or "police" in tags:
-        actions.append("Do not obstruct first responders.")
-    if "weather" in tags:
-        actions.append("Monitor local conditions and avoid flooded or hazardous routes.")
-
-    if not actions:
-        if severity in ("high", "critical"):
-            actions.append("Use caution and avoid the immediate area until more information is available.")
-        else:
-            actions.append("Monitor the situation for updates before changing plans.")
-
-    return actions[:4]
-
-
-def _build_summary(event: Event, reports: List[Report]) -> str:
-    if not reports:
-        return "Community reports indicate a developing situation in the area."
-
-    normalized_texts = [_normalize_text(report.text) for report in reports]
-    counts = Counter(normalized_texts)
-    most_common_text, _ = counts.most_common(1)[0]
-
-    if event.status == "resolved":
-        return (
-            f"This incident appears resolved or stale. "
-            f"It accumulated {event.unique_report_count} unique reports and "
-            f"{event.duplicate_report_count} duplicate reports. "
-            f"Most repeated signal: {most_common_text}"
+def _build_prompt(event: Event, reports: List[Report]) -> str:
+    report_lines = []
+    for idx, report in enumerate(reports, start=1):
+        report_lines.append(
+            f"{idx}. text={report.text!r}, duplicate={report.is_duplicate}, created_at={report.created_at.isoformat()}"
         )
 
-    if event.status == "cooling_down":
-        return (
-            f"This incident appears to be cooling down. "
-            f"It accumulated {event.unique_report_count} unique reports and "
-            f"{event.duplicate_report_count} duplicate reports. "
-            f"Most repeated signal: {most_common_text}"
-        )
+    return f"""
+You are generating a structured incident briefing for CrowdLens.
 
-    if event.unique_report_count == 1:
-        return f"1 unique community report indicates a newly observed situation. Latest signal: {reports[-1].text}"
+Return ONLY valid JSON matching this schema:
+{{
+  "title": string,
+  "summary": string,
+  "severity": "low" | "medium" | "high" | "critical",
+  "confidence": number,
+  "recommended_actions": string[],
+  "tags": string[],
+  "source_stats": {{
+    "report_count": integer,
+    "has_media": boolean
+  }}
+}}
 
-    if event.trend == "growing":
-        return (
-            f"{event.unique_report_count} unique reports and {event.duplicate_report_count} duplicate reports "
-            f"are reinforcing the same situation in this area. Most repeated signal: {most_common_text}"
-        )
+Context:
+- event_status: {event.status}
+- event_trend: {event.trend}
+- total_reports: {event.report_count}
+- unique_reports: {event.unique_report_count}
+- duplicate_reports: {event.duplicate_report_count}
+- minutes_since_last_report: {event.minutes_since_last_report}
 
-    return (
-        f"{event.unique_report_count} unique reports and {event.duplicate_report_count} duplicate reports "
-        f"indicate an ongoing situation in the same area. Most repeated signal: {most_common_text}"
-    )
+Reports:
+{chr(10).join(report_lines)}
+
+Instructions:
+- Be concise and factual.
+- Do not invent facts not supported by reports.
+- Treat duplicate reports as weaker support than unique reports.
+- Keep title under 120 chars.
+- Keep summary under 500 chars.
+- Use practical recommended actions.
+- Tags should be short lowercase labels.
+""".strip()
 
 
-def _build_title(event: Event, severity: SeverityLevel, unique_report_count: int) -> str:
-    if event.status == "resolved":
-        return "Resolved incident"
-    if event.status == "cooling_down":
-        return "Incident cooling down"
-    if severity in ("high", "critical"):
-        return "Potential high-priority incident"
-    if unique_report_count >= 3:
-        return "Active community-reported situation"
-    if unique_report_count >= 2:
-        return "Developing local situation"
-    return "Situation forming"
+def _severity_score_from_label(label: str) -> int:
+    mapping = {
+        "low": 1,
+        "medium": 3,
+        "high": 4,
+        "critical": 5,
+    }
+    return mapping.get(label, 3)
 
 
 def build_briefing(event: Event, reports: List[Report]) -> EventBriefing:
-    unique_reports = [report for report in reports if not report.is_duplicate]
+    if not settings.AI_BRIEFING_ENABLED or not settings.GEMINI_API_KEY:
+        return build_fallback_briefing(event, reports)
 
-    severity_label, severity_score = _severity_from_reports(unique_reports, event.unique_report_count)
-    confidence = _confidence_from_reports(event.unique_report_count, event.duplicate_report_count)
-    tags = _extract_tags_from_reports(unique_reports or reports)
-    title = _build_title(event, severity_label, event.unique_report_count)
-    summary = _build_summary(event, reports)
-    has_media = any(report.media_url for report in reports)
+    try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-    briefing = EventBriefing(
-        title=title,
-        summary=summary,
-        severity=severity_label,
-        confidence=confidence,
-        recommended_actions=_recommended_actions(severity_label, tags),
-        tags=tags,
-        source_stats=BriefingSourceStats(
-            report_count=event.report_count,
-            has_media=has_media,
-        ),
-    )
+        prompt = _build_prompt(event, reports)
 
-    event.title = title
-    event.severity = severity_score
-    event.confidence = confidence
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+        )
 
-    return briefing
+        raw_text = (response.text or "").strip()
+        parsed = json.loads(raw_text)
+        briefing = EventBriefing.model_validate(parsed)
+
+        event.title = briefing.title
+        event.confidence = briefing.confidence
+        event.severity = _severity_score_from_label(briefing.severity)
+
+        logger.info(
+            "ai_briefing_generated",
+            extra={
+                "event_status": event.status,
+                "report_count": event.report_count,
+                "unique_report_count": event.unique_report_count,
+                "briefing_title": briefing.title,
+                "briefing_severity": briefing.severity,
+            },
+        )
+
+        return briefing
+
+    except Exception as exc:
+        logger.warning(
+            "ai_briefing_fallback",
+            extra={"error_text": str(exc)},
+        )
+        return build_fallback_briefing(event, reports)
