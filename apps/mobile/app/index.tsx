@@ -162,6 +162,12 @@ export default function FeedScreen() {
               <Text style={styles.buttonText}>+ Report</Text>
             </Pressable>
           </Link>
+          
+          <Link href="/map" asChild>
+            <Pressable style={[styles.button, styles.secondaryButton]}>
+              <Text style={styles.buttonTextSecondary}>Open Map</Text>
+            </Pressable>
+          </Link>
 
           <Pressable
             style={[styles.button, styles.secondaryButton]}
