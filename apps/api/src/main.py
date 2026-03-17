@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from apps.api.src.briefing import build_briefing
 
 from packages.shared.models import (
     CreateReportRequest,
