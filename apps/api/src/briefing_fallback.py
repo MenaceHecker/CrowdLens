@@ -162,3 +162,47 @@ def _build_summary(event: Event, reports: List[Report]) -> str:
         f"{event.unique_report_count} unique reports and {event.duplicate_report_count} duplicate reports "
         f"indicate an ongoing situation in the same area. Most repeated signal: {most_common_text}"
     )
+
+
+def _build_title(event: Event, severity: SeverityLevel, unique_report_count: int) -> str:
+    if event.status == "resolved":
+        return "Resolved incident"
+    if event.status == "cooling_down":
+        return "Incident cooling down"
+    if severity in ("high", "critical"):
+        return "Potential high-priority incident"
+    if unique_report_count >= 3:
+        return "Active community-reported situation"
+    if unique_report_count >= 2:
+        return "Developing local situation"
+    return "Situation forming"
+
+
+def build_fallback_briefing(event: Event, reports: List[Report]) -> EventBriefing:
+    unique_reports = [report for report in reports if not report.is_duplicate]
+
+    severity_label, severity_score = _severity_from_reports(unique_reports, event.unique_report_count)
+    confidence = _confidence_from_reports(event.unique_report_count, event.duplicate_report_count)
+    tags = _extract_tags_from_reports(unique_reports or reports)
+    title = _build_title(event, severity_label, event.unique_report_count)
+    summary = _build_summary(event, reports)
+    has_media = any(report.media_url for report in reports)
+
+    briefing = EventBriefing(
+        title=title,
+        summary=summary,
+        severity=severity_label,
+        confidence=confidence,
+        recommended_actions=_recommended_actions(severity_label, tags),
+        tags=tags,
+        source_stats=BriefingSourceStats(
+            report_count=event.report_count,
+            has_media=has_media,
+        ),
+    )
+
+    event.title = title
+    event.severity = severity_score
+    event.confidence = confidence
+
+    return briefing
