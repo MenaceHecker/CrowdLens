@@ -6,7 +6,6 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from apps.api.src.briefing import build_briefing
 
 from packages.shared.models import (
     CreateReportRequest,
@@ -20,9 +19,11 @@ from packages.shared.models import (
 from packages.core.config import settings
 from packages.core.logging import setup_logging
 from apps.api.src.job_queue import InMemoryJobQueue
-from apps.api.src.events import InMemoryEventStore
 from apps.api.src.briefing import build_briefing
 from apps.api.src.ws import WebSocketManager
+from apps.api.src.events import compute_cell_id, refresh_event_metrics, upsert_event_from_report
+from apps.api.src.repositories.reports import FirestoreReportRepository
+from apps.api.src.repositories.events import FirestoreEventRepository
 
 
 setup_logging(service="api", level=settings.LOG_LEVEL)
@@ -30,12 +31,12 @@ logger = logging.getLogger("api")
 
 app = FastAPI(title="CrowdLens API", version="0.1.0")
 
-REPORTS: dict[str, Report] = {}
 JOB_QUEUE = InMemoryJobQueue()
-EVENTS = InMemoryEventStore()
-REPORT_TO_EVENT: dict[str, str] = {}
 LAST_ERROR: dict | None = None
 WS_MANAGER = WebSocketManager()
+
+report_repo = FirestoreReportRepository()
+event_repo = FirestoreEventRepository()
 
 
 class UpsertFromReportRequest(BaseModel):
@@ -124,7 +125,7 @@ def create_report(payload: CreateReportRequest):
         status="queued",
         media_url=payload.media_url,
     )
-    REPORTS[rid] = report
+    report_repo.save(report)
 
     job = JOB_QUEUE.enqueue_report_created(report_id=rid, user_id=user_id)
     logger.info(
@@ -140,7 +141,7 @@ def create_report(payload: CreateReportRequest):
 
 @app.get("/reports/{report_id}", response_model=Report)
 def get_report(report_id: str):
-    report = REPORTS.get(report_id)
+    report = report_repo.get(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="report_not_found")
     return report
@@ -191,11 +192,10 @@ def fail_job(job_id: str, req: JobResultRequest):
         raise HTTPException(status_code=404, detail="job_not_found")
 
     if job.type == "report_created":
-        report_id = job.payload.report_id
-        report = REPORTS.get(report_id)
+        report = report_repo.get(job.payload.report_id)
         if report:
             report.status = "failed"
-            REPORTS[report_id] = report
+            report_repo.save(report)
 
     logger.info(
         "job_failed",
@@ -213,26 +213,25 @@ async def upsert_event_from_report(req: UpsertFromReportRequest):
     global LAST_ERROR
 
     try:
-        report = REPORTS.get(req.report_id)
+        report = report_repo.get(req.report_id)
         if not report:
             raise HTTPException(status_code=404, detail="report_not_found")
 
         report.status = "processing"
-        REPORTS[report.id] = report
+        report_repo.save(report)
 
-        event, created = EVENTS.upsert_from_report(report, REPORTS)
-        REPORT_TO_EVENT[report.id] = event.id
+        cell_id = compute_cell_id(report.location.lat, report.location.lng)
+        existing_event = event_repo.get_by_cell(cell_id)
+        existing_reports = report_repo.get_many(existing_event.report_ids) if existing_event else []
 
-        linked_reports = [
-            REPORTS[rid]
-            for rid in event.report_ids
-            if rid in REPORTS
-        ]
+        event, created = upsert_event_from_report(existing_event, report, existing_reports)
+
+        linked_reports = existing_reports + [report]
         event.briefing = build_briefing(event, linked_reports)
-        EVENTS.events[event.id] = event
 
         report.status = "ready"
-        REPORTS[report.id] = report
+        report_repo.save(report)
+        event_repo.save(event)
 
         logger.info(
             "event_upserted",
@@ -291,41 +290,31 @@ async def upsert_event_from_report(req: UpsertFromReportRequest):
 
 @app.get("/feed", response_model=list[FeedItem])
 def get_feed():
-    events = EVENTS.list_active()
+    events = [refresh_event_metrics(event) for event in event_repo.list_feed()]
     items: list[FeedItem] = []
 
     for event in events:
         latest_report_id = event.report_ids[-1] if event.report_ids else None
-        items.append(
-            FeedItem(
-                event=event,
-                latest_report_id=latest_report_id,
-            )
-        )
+        items.append(FeedItem(event=event, latest_report_id=latest_report_id))
 
     return items
 
 
 @app.get("/events/{event_id}", response_model=Event)
 def get_event(event_id: str):
-    event = EVENTS.get(event_id)
+    event = event_repo.get(event_id)
     if not event:
         raise HTTPException(status_code=404, detail="event_not_found")
-    return event
+    return refresh_event_metrics(event)
 
 
 @app.get("/events/{event_id}/reports", response_model=list[Report])
 def get_event_reports(event_id: str):
-    event = EVENTS.get(event_id)
+    event = event_repo.get(event_id)
     if not event:
         raise HTTPException(status_code=404, detail="event_not_found")
 
-    reports = [
-        REPORTS[report_id]
-        for report_id in event.report_ids
-        if report_id in REPORTS
-    ]
-
+    reports = report_repo.get_many(event.report_ids)
     reports.sort(key=lambda report: report.created_at)
     return reports
 
