@@ -21,7 +21,11 @@ from packages.core.logging import setup_logging
 from apps.api.src.job_queue import InMemoryJobQueue
 from apps.api.src.briefing import build_briefing
 from apps.api.src.ws import WebSocketManager
-from apps.api.src.events import compute_cell_id, refresh_event_metrics, upsert_event_from_report
+from apps.api.src.events import (
+    compute_cell_id,
+    refresh_event_metrics,
+    upsert_event_from_report as upsert_event_from_report_domain,
+)
 from apps.api.src.repositories.reports import FirestoreReportRepository
 from apps.api.src.repositories.events import FirestoreEventRepository
 
@@ -209,7 +213,7 @@ def fail_job(job_id: str, req: JobResultRequest):
 
 
 @app.post("/events/upsert-from-report", response_model=UpsertFromReportResponse)
-async def upsert_event_from_report(req: UpsertFromReportRequest):
+async def upsert_event_from_report_endpoint(req: UpsertFromReportRequest):
     global LAST_ERROR
 
     try:
@@ -222,11 +226,20 @@ async def upsert_event_from_report(req: UpsertFromReportRequest):
 
         cell_id = compute_cell_id(report.location.lat, report.location.lng)
         existing_event = event_repo.get_by_cell(cell_id)
-        existing_reports = report_repo.get_many(existing_event.report_ids) if existing_event else []
 
-        event, created = upsert_event_from_report(existing_event, report, existing_reports)
+        existing_reports = []
+        if existing_event and existing_event.report_ids:
+            existing_reports = report_repo.get_many(existing_event.report_ids)
 
-        linked_reports = existing_reports + [report]
+        event, created = upsert_event_from_report_domain(
+            existing_event,
+            report,
+            existing_reports,
+        )
+
+        linked_reports = list(existing_reports)
+        linked_reports.append(report)
+
         event.briefing = build_briefing(event, linked_reports)
 
         report.status = "ready"
@@ -271,10 +284,13 @@ async def upsert_event_from_report(req: UpsertFromReportRequest):
         raise
 
     except Exception as e:
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+
         LAST_ERROR = {
             "where": "events_upsert_from_report",
             "report_id": req.report_id,
             "error": str(e),
+            "traceback": tb[-8000:],
         }
 
         logger.exception(
@@ -295,7 +311,12 @@ def get_feed():
 
     for event in events:
         latest_report_id = event.report_ids[-1] if event.report_ids else None
-        items.append(FeedItem(event=event, latest_report_id=latest_report_id))
+        items.append(
+            FeedItem(
+                event=event,
+                latest_report_id=latest_report_id,
+            )
+        )
 
     return items
 
