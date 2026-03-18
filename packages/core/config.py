@@ -17,8 +17,12 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
-
     AI_BRIEFING_ENABLED: bool = False
+
+    GCP_PROJECT_ID: str = ""
+    FIRESTORE_DATABASE: str = "(default)"
+    FIRESTORE_REPORTS_COLLECTION: str = "reports"
+    FIRESTORE_EVENTS_COLLECTION: str = "events"
 
 
 settings = Settings()
