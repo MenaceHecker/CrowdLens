@@ -1,8 +1,5 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Optional, Tuple
+from typing import List, Optional, Tuple
 from uuid import uuid4
 
 from packages.shared.models import Event, LatLng, Report
@@ -12,13 +9,13 @@ COOLING_DOWN_AFTER_MINUTES = 30
 RESOLVED_AFTER_MINUTES = 120
 
 
-def _cell_id(lat: float, lng: float, cell_size_deg: float = 0.01) -> str:
+def compute_cell_id(lat: float, lng: float, cell_size_deg: float = 0.01) -> str:
     lat_bucket = int(lat / cell_size_deg)
     lng_bucket = int(lng / cell_size_deg)
     return f"{lat_bucket}:{lng_bucket}"
 
 
-def _centroid(reports: list[Report]) -> LatLng:
+def _centroid(reports: List[Report]) -> LatLng:
     lat = sum(r.location.lat for r in reports) / max(len(reports), 1)
     lng = sum(r.location.lng for r in reports) / max(len(reports), 1)
     return LatLng(lat=lat, lng=lng)
@@ -69,12 +66,10 @@ def _within_duplicate_window(a: datetime, b: datetime, minutes: int = 15) -> boo
     return delta_seconds <= minutes * 60
 
 
-def _find_duplicate_report(event: Event, candidate: Report, all_reports: Dict[str, Report]) -> Optional[str]:
-    for report_id in reversed(event.report_ids):
-        existing = all_reports.get(report_id)
-        if not existing:
-            continue
+def _find_duplicate_report(existing_reports: List[Report], candidate: Report) -> Optional[str]:
+    ordered = sorted(existing_reports, key=lambda report: report.created_at, reverse=True)
 
+    for existing in ordered:
         if existing.is_duplicate:
             continue
 
@@ -142,7 +137,9 @@ def _ranking_score(event: Event) -> float:
     return round(max(total, 0.0), 2)
 
 
-def _refresh_metrics(event: Event, now: datetime) -> None:
+def refresh_event_metrics(event: Event, now: Optional[datetime] = None) -> Event:
+    now = now or datetime.now(timezone.utc)
+
     event.minutes_since_last_report = _minutes_since(event.last_seen_at, now)
     event.is_recent = _is_recent(event.minutes_since_last_report)
     event.report_velocity_per_hour = _report_velocity_per_hour(
@@ -152,64 +149,22 @@ def _refresh_metrics(event: Event, now: datetime) -> None:
     )
     _apply_lifecycle(event, now)
     event.ranking_score = _ranking_score(event)
+    return event
 
 
-@dataclass
-class InMemoryEventStore:
-    events: Dict[str, Event]
-    cell_to_event: Dict[str, str]
+def upsert_event_from_report(
+    existing_event: Optional[Event],
+    report: Report,
+    existing_reports: List[Report],
+) -> Tuple[Event, bool]:
+    now = datetime.now(timezone.utc)
 
-    def __init__(self) -> None:
-        self.events = {}
-        self.cell_to_event = {}
-
-    def upsert_from_report(self, report: Report, all_reports: Dict[str, Report]) -> Tuple[Event, bool]:
-        now = datetime.now(timezone.utc)
-        cell = _cell_id(report.location.lat, report.location.lng)
-
-        existing_event_id = self.cell_to_event.get(cell)
-        if existing_event_id and existing_event_id in self.events:
-            event = self.events[existing_event_id]
-
-            duplicate_of = _find_duplicate_report(event, report, all_reports)
-            if duplicate_of:
-                report.is_duplicate = True
-                report.duplicate_of = duplicate_of
-            else:
-                report.is_duplicate = False
-                report.duplicate_of = None
-
-            if report.id not in event.report_ids:
-                event.report_ids.append(report.id)
-
-            event.report_count = len(event.report_ids)
-            event.unique_report_count = len(
-                [rid for rid in event.report_ids if rid in all_reports and not all_reports[rid].is_duplicate]
-            )
-            event.duplicate_report_count = event.report_count - event.unique_report_count
-
-            event.updated_at = now
-            event.last_seen_at = now
-            event.trend = _derive_trend(event.unique_report_count)
-
-            unique_reports = [
-                all_reports[rid]
-                for rid in event.report_ids
-                if rid in all_reports and not all_reports[rid].is_duplicate
-            ]
-            event.centroid = _centroid(unique_reports) if unique_reports else event.centroid
-
-            _refresh_metrics(event, now)
-
-            self.events[event.id] = event
-            return event, False
-
-        eid = str(uuid4())
+    if existing_event is None:
         report.is_duplicate = False
         report.duplicate_of = None
 
         event = Event(
-            id=eid,
+            id=str(uuid4()),
             status="forming",
             created_at=now,
             updated_at=now,
@@ -221,7 +176,7 @@ class InMemoryEventStore:
             is_recent=True,
             report_velocity_per_hour=1.0,
             ranking_score=0.0,
-            cell_id=cell,
+            cell_id=compute_cell_id(report.location.lat, report.location.lng),
             centroid=LatLng(lat=report.location.lat, lng=report.location.lng),
             report_ids=[report.id],
             report_count=1,
@@ -232,34 +187,34 @@ class InMemoryEventStore:
             title="Situation forming",
             briefing=None,
         )
-
-        _refresh_metrics(event, now)
-
-        self.events[eid] = event
-        self.cell_to_event[cell] = eid
+        refresh_event_metrics(event, now)
         return event, True
 
-    def get(self, event_id: str) -> Optional[Event]:
-        event = self.events.get(event_id)
-        if event:
-            _refresh_metrics(event, datetime.now(timezone.utc))
-        return event
+    duplicate_of = _find_duplicate_report(existing_reports, report)
+    if duplicate_of:
+        report.is_duplicate = True
+        report.duplicate_of = duplicate_of
+    else:
+        report.is_duplicate = False
+        report.duplicate_of = None
 
-    def list_active(self) -> list[Event]:
-        now = datetime.now(timezone.utc)
-        items = [
-            event
-            for event in self.events.values()
-            if event.status in ("forming", "active", "cooling_down", "resolved")
-        ]
-        for event in items:
-            _refresh_metrics(event, now)
+    updated_reports = list(existing_reports)
+    updated_reports.append(report)
 
-        items.sort(
-            key=lambda event: (
-                event.ranking_score,
-                event.updated_at,
-            ),
-            reverse=True,
-        )
-        return items
+    if report.id not in existing_event.report_ids:
+        existing_event.report_ids.append(report.id)
+
+    unique_reports = [r for r in updated_reports if not r.is_duplicate]
+
+    existing_event.report_count = len(updated_reports)
+    existing_event.unique_report_count = len(unique_reports)
+    existing_event.duplicate_report_count = existing_event.report_count - existing_event.unique_report_count
+    existing_event.updated_at = now
+    existing_event.last_seen_at = now
+    existing_event.trend = _derive_trend(existing_event.unique_report_count)
+
+    if unique_reports:
+        existing_event.centroid = _centroid(unique_reports)
+
+    refresh_event_metrics(existing_event, now)
+    return existing_event, False
