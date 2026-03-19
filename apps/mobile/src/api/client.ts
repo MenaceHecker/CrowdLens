@@ -1,19 +1,19 @@
 import { API_BASE } from "./config";
 import {
   CreateReportRequest,
-  CreateUploadUrlRequest,
-  CreateUploadUrlResponse,
   Event,
   FeedItem,
+  MediaUploadUrlRequest,
+  MediaUploadUrlResponse,
   Report,
 } from "../types/api";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    ...init
+    ...init,
   });
 
   if (!response.ok) {
@@ -39,14 +39,12 @@ export async function getEventReports(eventId: string): Promise<Report[]> {
 export async function createReport(payload: CreateReportRequest): Promise<Report> {
   return apiFetch<Report>("/reports", {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 }
 
-export async function createUploadUrl(
-  payload: CreateUploadUrlRequest
-): Promise<CreateUploadUrlResponse> {
-  return apiFetch<CreateUploadUrlResponse>("/media/upload-url", {
+export async function getMediaUploadUrl(payload: MediaUploadUrlRequest): Promise<MediaUploadUrlResponse> {
+  return apiFetch<MediaUploadUrlResponse>("/media/upload-url", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -59,8 +57,8 @@ export async function processNextJob(): Promise<{ ok: boolean; ran: boolean; rea
   const response = await fetch(`${workerBase}/jobs/run-once`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
-    }
+      "Content-Type": "application/json",
+    },
   });
 
   if (!response.ok) {
