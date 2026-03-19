@@ -96,9 +96,9 @@ export default function MapScreen() {
     const ws = new WebSocket(`${WS_BASE}/ws/feed`);
     socketRef.current = ws;
 
-    ws.onmessage = (event) => {
+    ws.onmessage = (incoming) => {
       try {
-        const payload = JSON.parse(event.data);
+        const payload = JSON.parse(incoming.data);
         if (payload.type === "feed_updated") {
           loadFeed(true);
         }
@@ -190,7 +190,7 @@ export default function MapScreen() {
         <View style={styles.headerTextWrap}>
           <Text style={styles.heading}>Live Incident Map</Text>
           <Text style={styles.subheading}>
-            Realtime event pins based on centroid and severity
+            Realtime event pins with severity and incident type
           </Text>
         </View>
 
@@ -239,7 +239,13 @@ export default function MapScreen() {
                     Status: {event.status} · Severity: {event.severity}
                   </Text>
                   <Text style={styles.calloutText}>
+                    Type: {event.briefing?.incident_type ?? "unknown"}
+                  </Text>
+                  <Text style={styles.calloutText}>
                     Rank: {event.ranking_score} · Unique: {event.unique_report_count}
+                  </Text>
+                  <Text style={styles.calloutText}>
+                    Media: {event.briefing?.source_stats.has_media ? "yes" : "no"}
                   </Text>
                   <Text style={styles.calloutHint}>Tap for details</Text>
                 </View>
@@ -251,8 +257,8 @@ export default function MapScreen() {
 
       <View style={styles.legend}>
         <Text style={styles.legendTitle}>Legend</Text>
-        <Text style={styles.legendText}>Red: severe/active</Text>
-        <Text style={styles.legendText}>Orange: elevated</Text>
+        <Text style={styles.legendText}>Red: critical / active</Text>
+        <Text style={styles.legendText}>Orange: elevated severity</Text>
         <Text style={styles.legendText}>Yellow: cooling down</Text>
         <Text style={styles.legendText}>Gray: resolved</Text>
       </View>
@@ -340,7 +346,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   callout: {
-    width: 220,
+    width: 230,
     padding: 4
   },
   calloutTitle: {
