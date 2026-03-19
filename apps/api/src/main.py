@@ -28,6 +28,7 @@ from apps.api.src.events import (
 )
 from apps.api.src.repositories.reports import FirestoreReportRepository
 from apps.api.src.repositories.events import FirestoreEventRepository
+from apps.api.src.services.tasks import CloudTasksService
 
 
 setup_logging(service="api", level=settings.LOG_LEVEL)
@@ -41,6 +42,7 @@ WS_MANAGER = WebSocketManager()
 
 report_repo = FirestoreReportRepository()
 event_repo = FirestoreEventRepository()
+tasks_service = CloudTasksService()
 
 
 class UpsertFromReportRequest(BaseModel):
@@ -106,6 +108,7 @@ def healthz():
         "service": "api",
         "env": settings.APP_ENV,
         "time": datetime.now(timezone.utc).isoformat(),
+        "use_cloud_tasks": settings.USE_CLOUD_TASKS,
     }
 
 
@@ -131,15 +134,27 @@ def create_report(payload: CreateReportRequest):
     )
     report_repo.save(report)
 
-    job = JOB_QUEUE.enqueue_report_created(report_id=rid, user_id=user_id)
-    logger.info(
-        "job_enqueued",
-        extra={
-            "job_id": job.id,
-            "job_type": job.type,
-            "report_id": rid,
-        },
-    )
+    if settings.USE_CLOUD_TASKS:
+        task_info = tasks_service.create_process_report_task(report_id=rid)
+        logger.info(
+            "cloud_task_enqueued",
+            extra={
+                "report_id": rid,
+                "task_name": task_info["task_name"],
+                "target_url": task_info["target_url"],
+            },
+        )
+    else:
+        job = JOB_QUEUE.enqueue_report_created(report_id=rid, user_id=user_id)
+        logger.info(
+            "job_enqueued",
+            extra={
+                "job_id": job.id,
+                "job_type": job.type,
+                "report_id": rid,
+            },
+        )
+
     return report
 
 
