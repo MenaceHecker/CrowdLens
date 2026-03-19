@@ -10,6 +10,7 @@ import { SectionCard } from "../../src/components/SectionCard";
 import { colors, radius, spacing } from "../../src/styles/theme";
 import { Event, Report } from "../../src/types/api";
 
+
 const POLL_INTERVAL_MS = 8000;
 
 function statusTone(status: string) {
