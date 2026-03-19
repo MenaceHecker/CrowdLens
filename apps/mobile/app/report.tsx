@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { router } from "expo-router";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
 
-import { createReport, createUploadUrl, processNextJob } from "../src/api/client";
+import { createReport, getMediaUploadUrl, processNextJob } from "../src/api/client";
 import { colors, radius, spacing } from "../src/styles/theme";
+
+type PickedMedia = {
+  uri: string;
+  mimeType: string;
+  filename: string;
+};
 
 export default function ReportScreen() {
   const [text, setText] = useState("");
@@ -13,53 +18,51 @@ export default function ReportScreen() {
   const [lng, setLng] = useState("-84.3963");
   const [submitting, setSubmitting] = useState(false);
   const [submitAndProcess, setSubmitAndProcess] = useState(false);
-  const [mediaUri, setMediaUri] = useState<string | null>(null);
-  const [mediaName, setMediaName] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<string | null>(null);
+  const [media, setMedia] = useState<PickedMedia | null>(null);
 
-  const pickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Permission needed", "Media library permission is required.");
-      return;
-    }
-
+  const pickMedia = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images", "videos"],
+      allowsEditing: false,
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
-      setMediaUri(asset.uri);
-      setMediaName(asset.fileName ?? `upload-${Date.now()}.jpg`);
-      setMediaType(asset.mimeType ?? "application/octet-stream");
+    if (result.canceled) {
+      return;
     }
+
+    const asset = result.assets[0];
+    setMedia({
+      uri: asset.uri,
+      mimeType: asset.mimeType || "application/octet-stream",
+      filename: asset.fileName || `upload-${Date.now()}`,
+    });
   };
 
-  const uploadMediaIfPresent = async (): Promise<string | null> => {
-    if (!mediaUri || !mediaName || !mediaType) {
-      return null;
-    }
+  const uploadMediaIfNeeded = async (): Promise<string | null> => {
+    if (!media) return null;
 
-    const signed = await createUploadUrl({
-      filename: mediaName,
-      content_type: mediaType,
+    const bundle = await getMediaUploadUrl({
+      filename: media.filename,
+      content_type: media.mimeType,
     });
 
-    const uploadResponse = await FileSystem.uploadAsync(signed.upload_url, mediaUri, {
-      httpMethod: "PUT",
+    const fileResponse = await fetch(media.uri);
+    const blob = await fileResponse.blob();
+
+    const uploadResp = await fetch(bundle.upload_url, {
+      method: "PUT",
       headers: {
-        "Content-Type": signed.content_type,
+        "Content-Type": bundle.content_type,
       },
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      body: blob,
     });
 
-    if (uploadResponse.status < 200 || uploadResponse.status >= 300) {
-      throw new Error(`Media upload failed: ${uploadResponse.status}`);
+    if (!uploadResp.ok) {
+      throw new Error(`Media upload failed: ${uploadResp.status}`);
     }
 
-    return signed.object_path;
+    return bundle.view_url;
   };
 
   const submit = async (alsoProcess: boolean) => {
@@ -72,15 +75,15 @@ export default function ReportScreen() {
       setSubmitting(true);
       setSubmitAndProcess(alsoProcess);
 
-      const mediaPath = await uploadMediaIfPresent();
+      const mediaUrl = await uploadMediaIfNeeded();
 
       await createReport({
         text: text.trim(),
         location: {
           lat: Number(lat),
-          lng: Number(lng)
+          lng: Number(lng),
         },
-        media_path: mediaPath,
+        media_url: mediaUrl,
       });
 
       if (alsoProcess) {
@@ -103,13 +106,13 @@ export default function ReportScreen() {
     <View style={styles.container}>
       <Text style={styles.heading}>Submit Incident Report</Text>
       <Text style={styles.subheading}>
-        Send a local test report to the CrowdLens backend.
+        Send a report to the deployed CrowdLens backend.
       </Text>
 
       <View style={styles.devNotice}>
-        <Text style={styles.devNoticeTitle}>Media upload enabled</Text>
+        <Text style={styles.devNoticeTitle}>Media support</Text>
         <Text style={styles.devNoticeText}>
-          Attach a photo or video, then submit the report.
+          You can attach one image or video. It uploads directly to Cloud Storage.
         </Text>
       </View>
 
@@ -123,11 +126,20 @@ export default function ReportScreen() {
         onChangeText={setText}
       />
 
-      <Pressable style={[styles.button, styles.secondaryButton]} onPress={pickImage}>
-        <Text style={styles.secondaryButtonText}>
-          {mediaName ? `Attached: ${mediaName}` : "Attach Photo / Video"}
-        </Text>
+      <Pressable style={[styles.button, styles.secondaryButton]} onPress={pickMedia}>
+        <Text style={styles.secondaryButtonText}>{media ? "Change Attachment" : "Pick Image / Video"}</Text>
       </Pressable>
+
+      {media ? (
+        <View style={styles.previewBox}>
+          <Text style={styles.previewLabel}>{media.filename}</Text>
+          {media.mimeType.startsWith("image/") ? (
+            <Image source={{ uri: media.uri }} style={styles.previewImage} />
+          ) : (
+            <Text style={styles.previewLabel}>Video selected</Text>
+          )}
+        </View>
+      ) : null}
 
       <View style={styles.row}>
         <View style={styles.col}>
@@ -182,18 +194,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg,
-    padding: spacing.md
+    padding: spacing.md,
   },
   heading: {
     color: colors.text,
     fontSize: 24,
     fontWeight: "800",
-    marginBottom: 6
+    marginBottom: 6,
   },
   subheading: {
     color: colors.textMuted,
     marginBottom: spacing.lg,
-    lineHeight: 20
+    lineHeight: 20,
   },
   devNotice: {
     backgroundColor: colors.surface,
@@ -201,22 +213,22 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.lg,
     padding: spacing.md,
-    marginBottom: spacing.md
+    marginBottom: spacing.md,
   },
   devNoticeTitle: {
     color: colors.text,
     fontWeight: "700",
-    marginBottom: 4
+    marginBottom: 4,
   },
   devNoticeText: {
     color: colors.textMuted,
-    lineHeight: 20
+    lineHeight: 20,
   },
   label: {
     color: colors.textSoft,
     marginBottom: 6,
     marginTop: 10,
-    fontWeight: "600"
+    fontWeight: "600",
   },
   input: {
     backgroundColor: colors.surface,
@@ -224,43 +236,60 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border
+    borderColor: colors.border,
   },
   textArea: {
     height: 140,
-    textAlignVertical: "top"
+    textAlignVertical: "top",
   },
   row: {
     flexDirection: "row",
-    gap: spacing.sm
+    gap: spacing.sm,
   },
   col: {
-    flex: 1
+    flex: 1,
   },
   actions: {
     marginTop: spacing.xl,
-    gap: spacing.sm
+    gap: spacing.sm,
   },
   button: {
     paddingVertical: 14,
     borderRadius: radius.md,
     alignItems: "center",
-    paddingHorizontal: 12,
   },
   primaryButton: {
-    backgroundColor: colors.primary
+    backgroundColor: colors.primary,
   },
   secondaryButton: {
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border
+    borderColor: colors.border,
+    marginTop: spacing.sm,
   },
   primaryButtonText: {
     color: colors.text,
-    fontWeight: "800"
+    fontWeight: "800",
   },
   secondaryButtonText: {
     color: colors.textSoft,
-    fontWeight: "800"
-  }
+    fontWeight: "800",
+  },
+  previewBox: {
+    marginTop: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  previewLabel: {
+    color: colors.textSoft,
+  },
+  previewImage: {
+    width: "100%",
+    height: 220,
+    borderRadius: radius.md,
+  },
 });
