@@ -1,4 +1,4 @@
-from typing import List, Literal
+from typing import Literal, List
 
 from pydantic import BaseModel, Field
 
@@ -7,15 +7,16 @@ SeverityLevel = Literal["low", "medium", "high", "critical"]
 
 
 class BriefingSourceStats(BaseModel):
-    report_count: int = Field(..., ge=0)
+    report_count: int = Field(default=0, ge=0)
     has_media: bool = False
 
 
 class EventBriefing(BaseModel):
-    title: str = Field(..., min_length=1, max_length=120)
-    summary: str = Field(..., min_length=1, max_length=1000)
+    title: str
+    summary: str
+    incident_type: str = "unknown"
     severity: SeverityLevel
-    confidence: float = Field(..., ge=0.0, le=1.0)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     recommended_actions: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     source_stats: BriefingSourceStats
