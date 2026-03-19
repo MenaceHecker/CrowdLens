@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { router } from "expo-router";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 
-import { createReport, processNextJob } from "../src/api/client";
+import { createReport, createUploadUrl, processNextJob } from "../src/api/client";
 import { colors, radius, spacing } from "../src/styles/theme";
 
 export default function ReportScreen() {
@@ -11,6 +13,54 @@ export default function ReportScreen() {
   const [lng, setLng] = useState("-84.3963");
   const [submitting, setSubmitting] = useState(false);
   const [submitAndProcess, setSubmitAndProcess] = useState(false);
+  const [mediaUri, setMediaUri] = useState<string | null>(null);
+  const [mediaName, setMediaName] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<string | null>(null);
+
+  const pickImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Media library permission is required.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images", "videos"],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      const asset = result.assets[0];
+      setMediaUri(asset.uri);
+      setMediaName(asset.fileName ?? `upload-${Date.now()}.jpg`);
+      setMediaType(asset.mimeType ?? "application/octet-stream");
+    }
+  };
+
+  const uploadMediaIfPresent = async (): Promise<string | null> => {
+    if (!mediaUri || !mediaName || !mediaType) {
+      return null;
+    }
+
+    const signed = await createUploadUrl({
+      filename: mediaName,
+      content_type: mediaType,
+    });
+
+    const uploadResponse = await FileSystem.uploadAsync(signed.upload_url, mediaUri, {
+      httpMethod: "PUT",
+      headers: {
+        "Content-Type": signed.content_type,
+      },
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    });
+
+    if (uploadResponse.status < 200 || uploadResponse.status >= 300) {
+      throw new Error(`Media upload failed: ${uploadResponse.status}`);
+    }
+
+    return signed.object_path;
+  };
 
   const submit = async (alsoProcess: boolean) => {
     if (!text.trim()) {
@@ -22,25 +72,22 @@ export default function ReportScreen() {
       setSubmitting(true);
       setSubmitAndProcess(alsoProcess);
 
+      const mediaPath = await uploadMediaIfPresent();
+
       await createReport({
         text: text.trim(),
         location: {
           lat: Number(lat),
           lng: Number(lng)
-        }
+        },
+        media_path: mediaPath,
       });
 
       if (alsoProcess) {
         await processNextJob();
-        Alert.alert(
-          "Success",
-          "Report submitted and one queued job was processed."
-        );
+        Alert.alert("Success", "Report submitted and one queued job was processed.");
       } else {
-        Alert.alert(
-          "Report submitted",
-          "Your report was queued successfully."
-        );
+        Alert.alert("Report submitted", "Your report was queued successfully.");
       }
 
       router.replace("/");
@@ -60,9 +107,9 @@ export default function ReportScreen() {
       </Text>
 
       <View style={styles.devNotice}>
-        <Text style={styles.devNoticeTitle}>Dev convenience</Text>
+        <Text style={styles.devNoticeTitle}>Media upload enabled</Text>
         <Text style={styles.devNoticeText}>
-          “Submit & Process Locally” will submit the report and call the worker once.
+          Attach a photo or video, then submit the report.
         </Text>
       </View>
 
@@ -75,6 +122,12 @@ export default function ReportScreen() {
         value={text}
         onChangeText={setText}
       />
+
+      <Pressable style={[styles.button, styles.secondaryButton]} onPress={pickImage}>
+        <Text style={styles.secondaryButtonText}>
+          {mediaName ? `Attached: ${mediaName}` : "Attach Photo / Video"}
+        </Text>
+      </Pressable>
 
       <View style={styles.row}>
         <View style={styles.col}>
@@ -191,7 +244,8 @@ const styles = StyleSheet.create({
   button: {
     paddingVertical: 14,
     borderRadius: radius.md,
-    alignItems: "center"
+    alignItems: "center",
+    paddingHorizontal: 12,
   },
   primaryButton: {
     backgroundColor: colors.primary
