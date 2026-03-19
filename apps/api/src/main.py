@@ -9,8 +9,6 @@ from pydantic import BaseModel, Field
 
 from packages.shared.models import (
     CreateReportRequest,
-    CreateUploadUrlRequest,
-    CreateUploadUrlResponse,
     Report,
     Job,
     NextJobRequest,
@@ -46,7 +44,7 @@ WS_MANAGER = WebSocketManager()
 report_repo = FirestoreReportRepository()
 event_repo = FirestoreEventRepository()
 tasks_service = CloudTasksService()
-storage_service = StorageService() if settings.GCS_BUCKET_NAME else None
+storage_service = StorageService()
 
 
 class UpsertFromReportRequest(BaseModel):
@@ -56,6 +54,18 @@ class UpsertFromReportRequest(BaseModel):
 class UpsertFromReportResponse(BaseModel):
     event_id: str
     created: bool
+
+
+class MediaUploadUrlRequest(BaseModel):
+    filename: str = Field(..., min_length=1)
+    content_type: str = Field(..., min_length=1)
+
+
+class MediaUploadUrlResponse(BaseModel):
+    object_name: str
+    upload_url: str
+    view_url: str
+    content_type: str
 
 
 @app.middleware("http")
@@ -96,12 +106,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         extra={"path": request.url.path, "error_text": str(exc)},
     )
 
-    if settings.APP_ENV == "local":
-        return JSONResponse(
-            status_code=500,
-            content={"error": "internal_error", "detail": str(exc)},
-        )
-
     return JSONResponse(status_code=500, content={"error": "internal_error"})
 
 
@@ -121,35 +125,25 @@ def debug_last_error():
     return LAST_ERROR or {"ok": True, "last_error": None}
 
 
-@app.post("/media/upload-url", response_model=CreateUploadUrlResponse)
-def create_upload_url(payload: CreateUploadUrlRequest):
-    if not storage_service:
-        raise HTTPException(status_code=400, detail="media_upload_not_configured")
+@app.post("/media/upload-url", response_model=MediaUploadUrlResponse)
+def create_media_upload_url(payload: MediaUploadUrlRequest):
+    if not settings.GCS_BUCKET_NAME:
+        raise HTTPException(status_code=500, detail="gcs_bucket_not_configured")
 
-    object_path = storage_service.build_object_path(payload.filename)
-    upload_url = storage_service.generate_upload_signed_url(
-        object_path=object_path,
+    ext = payload.filename.split(".")[-1] if "." in payload.filename else "bin"
+    object_name = f"reports/{uuid4()}.{ext}"
+
+    bundle = storage_service.generate_upload_bundle(
+        object_name=object_name,
         content_type=payload.content_type,
     )
-
-    return CreateUploadUrlResponse(
-        object_path=object_path,
-        upload_url=upload_url,
-        content_type=payload.content_type,
-    )
+    return MediaUploadUrlResponse(**bundle)
 
 
 @app.post("/reports", response_model=Report)
 def create_report(payload: CreateReportRequest):
     rid = str(uuid4())
     user_id = "local-dev-user"
-
-    media_url = payload.media_url
-    if payload.media_path and storage_service:
-        try:
-            media_url = storage_service.generate_read_signed_url(payload.media_path)
-        except Exception:
-            media_url = None
 
     report = Report(
         id=rid,
@@ -159,8 +153,7 @@ def create_report(payload: CreateReportRequest):
         occurred_at=payload.occurred_at,
         created_at=datetime.now(timezone.utc),
         status="queued",
-        media_url=media_url,
-        media_path=payload.media_path,
+        media_url=payload.media_url,
     )
     report_repo.save(report)
 
@@ -207,13 +200,7 @@ def get_next_job(req: NextJobRequest):
     if not job:
         return Response(status_code=204)
 
-    logger.info(
-        "job_claimed",
-        extra={
-            "job_id": job.id,
-            "worker_id": req.worker_id,
-        },
-    )
+    logger.info("job_claimed", extra={"job_id": job.id, "worker_id": req.worker_id})
     return job
 
 
@@ -223,14 +210,7 @@ def complete_job(job_id: str, req: JobResultRequest):
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
 
-    logger.info(
-        "job_completed",
-        extra={
-            "job_id": job.id,
-            "worker_id": req.worker_id,
-            "ok": req.ok,
-        },
-    )
+    logger.info("job_completed", extra={"job_id": job.id, "worker_id": req.worker_id, "ok": req.ok})
     return job
 
 
@@ -246,14 +226,7 @@ def fail_job(job_id: str, req: JobResultRequest):
             report.status = "failed"
             report_repo.save(report)
 
-    logger.info(
-        "job_failed",
-        extra={
-            "job_id": job.id,
-            "worker_id": req.worker_id,
-            "error_text": job.error,
-        },
-    )
+    logger.info("job_failed", extra={"job_id": job.id, "worker_id": req.worker_id, "error_text": job.error})
     return job
 
 
@@ -276,11 +249,7 @@ async def upsert_event_from_report_endpoint(req: UpsertFromReportRequest):
         if existing_event and existing_event.report_ids:
             existing_reports = report_repo.get_many(existing_event.report_ids)
 
-        event, created = upsert_event_from_report_domain(
-            existing_event,
-            report,
-            existing_reports,
-        )
+        event, created = upsert_event_from_report_domain(existing_event, report, existing_reports)
 
         linked_reports = list(existing_reports)
         linked_reports.append(report)
@@ -299,18 +268,10 @@ async def upsert_event_from_report_endpoint(req: UpsertFromReportRequest):
                 "report_id": report.id,
                 "cell": event.cell_id,
                 "status": event.status,
-                "resolved_at": event.resolved_at.isoformat() if event.resolved_at else None,
+                "incident_type": event.briefing.incident_type if event.briefing else None,
                 "report_count": event.report_count,
                 "unique_report_count": event.unique_report_count,
                 "duplicate_report_count": event.duplicate_report_count,
-                "report_is_duplicate": report.is_duplicate,
-                "duplicate_of": report.duplicate_of,
-                "trend": event.trend,
-                "first_seen_at": event.first_seen_at.isoformat(),
-                "last_seen_at": event.last_seen_at.isoformat(),
-                "minutes_since_last_report": event.minutes_since_last_report,
-                "is_recent": event.is_recent,
-                "report_velocity_per_hour": event.report_velocity_per_hour,
                 "ranking_score": event.ranking_score,
             },
         )
@@ -330,22 +291,13 @@ async def upsert_event_from_report_endpoint(req: UpsertFromReportRequest):
 
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-
         LAST_ERROR = {
             "where": "events_upsert_from_report",
             "report_id": req.report_id,
             "error": str(e),
             "traceback": tb[-8000:],
         }
-
-        logger.exception(
-            "events_upsert_failed",
-            extra={
-                "report_id": req.report_id,
-                "error_text": str(e),
-            },
-        )
-
+        logger.exception("events_upsert_failed", extra={"report_id": req.report_id, "error_text": str(e)})
         raise HTTPException(status_code=500, detail=f"events_upsert_failed: {str(e)}")
 
 
