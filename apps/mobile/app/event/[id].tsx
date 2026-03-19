@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 
 import { getEvent, getEventReports } from "../../src/api/client";
 import { WS_BASE } from "../../src/api/config";
@@ -233,7 +234,7 @@ export default function EventDetailScreen() {
         </View>
       </SectionCard>
 
-      <SectionCard title="Source Reports">
+            <SectionCard title="Source Reports">
         {reports.map((report) => (
           <View key={report.id} style={styles.reportItem}>
             <Text style={styles.reportText}>{report.text}</Text>
@@ -243,6 +244,13 @@ export default function EventDetailScreen() {
                 tone={report.is_duplicate ? "yellow" : "green"}
               />
             </View>
+            {report.media_url ? (
+              <Image
+                source={{ uri: report.media_url }}
+                style={styles.reportImage}
+                contentFit="cover"
+              />
+            ) : null}
             {report.duplicate_of ? (
               <Text style={styles.reportMeta}>duplicate_of: {report.duplicate_of}</Text>
             ) : null}
@@ -354,5 +362,10 @@ const styles = StyleSheet.create({
   },
   error: {
     color: "#f87171"
+  },
+    reportImage: {
+    width: "100%",
+    height: 180,
+    borderRadius: radius.md,
   }
 });
