@@ -1,5 +1,12 @@
 import { API_BASE } from "./config";
-import { CreateReportRequest, Event, FeedItem, Report } from "../types/api";
+import {
+  CreateReportRequest,
+  CreateUploadUrlRequest,
+  CreateUploadUrlResponse,
+  Event,
+  FeedItem,
+  Report,
+} from "../types/api";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -33,6 +40,15 @@ export async function createReport(payload: CreateReportRequest): Promise<Report
   return apiFetch<Report>("/reports", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export async function createUploadUrl(
+  payload: CreateUploadUrlRequest
+): Promise<CreateUploadUrlResponse> {
+  return apiFetch<CreateUploadUrlResponse>("/media/upload-url", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
