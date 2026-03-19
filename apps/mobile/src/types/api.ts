@@ -30,6 +30,7 @@ export interface Report {
   created_at: string;
   status: string;
   media_url: string | null;
+  media_path: string | null;
   is_duplicate: boolean;
   duplicate_of: string | null;
 }
@@ -69,4 +70,16 @@ export interface CreateReportRequest {
   location: LatLng;
   occurred_at?: string | null;
   media_url?: string | null;
+  media_path?: string | null;
+}
+
+export interface CreateUploadUrlRequest {
+  filename: string;
+  content_type: string;
+}
+
+export interface CreateUploadUrlResponse {
+  object_path: string;
+  upload_url: string;
+  content_type: string;
 }
