@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Image } from "expo-image";
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getEvent, getEventReports } from "../../src/api/client";
 import { WS_BASE } from "../../src/api/config";
@@ -9,7 +8,6 @@ import { Badge } from "../../src/components/Badge";
 import { SectionCard } from "../../src/components/SectionCard";
 import { colors, radius, spacing } from "../../src/styles/theme";
 import { Event, Report } from "../../src/types/api";
-
 
 const POLL_INTERVAL_MS = 8000;
 
@@ -35,6 +33,13 @@ function trendTone(trend: string) {
     default:
       return "blue";
   }
+}
+
+function severityTone(severity: number) {
+  if (severity >= 5) return "red";
+  if (severity >= 4) return "yellow";
+  if (severity >= 3) return "blue";
+  return "gray";
 }
 
 export default function EventDetailScreen() {
@@ -85,19 +90,15 @@ export default function EventDetailScreen() {
     const ws = new WebSocket(`${WS_BASE}/ws/events/${id}`);
     socketRef.current = ws;
 
-    ws.onmessage = (event) => {
+    ws.onmessage = (incoming) => {
       try {
-        const payload = JSON.parse(event.data);
+        const payload = JSON.parse(incoming.data);
         if (payload.type === "event_updated" && payload.event_id === id) {
           loadEvent(true);
         }
       } catch {
         // ignore malformed messages
       }
-    };
-
-    ws.onerror = () => {
-      // polling remains as fallback
     };
 
     ws.onclose = () => {
@@ -182,7 +183,10 @@ export default function EventDetailScreen() {
         <View style={styles.badgeRow}>
           <Badge label={event.status} tone={statusTone(event.status) as any} />
           <Badge label={event.trend} tone={trendTone(event.trend) as any} />
-          <Badge label={`score ${event.ranking_score}`} tone="blue" />
+          <Badge label={`sev ${event.severity}`} tone={severityTone(event.severity) as any} />
+          {event.briefing?.incident_type ? (
+            <Badge label={event.briefing.incident_type} tone="purple" />
+          ) : null}
         </View>
 
         <Text style={styles.heroSummary}>
@@ -235,13 +239,15 @@ export default function EventDetailScreen() {
         </View>
       </SectionCard>
 
-            <SectionCard title="Source Reports">
-                {reports.map((report) => (
+      <SectionCard title="Source Reports">
+        {reports.map((report) => (
           <View key={report.id} style={styles.reportItem}>
             <Text style={styles.reportText}>{report.text}</Text>
+
             {report.media_url ? (
               <Image source={{ uri: report.media_url }} style={styles.reportImage} />
             ) : null}
+
             <View style={styles.badgeRow}>
               <Badge
                 label={report.is_duplicate ? "duplicate" : "unique"}
@@ -251,6 +257,7 @@ export default function EventDetailScreen() {
                 <Badge label={event.briefing.incident_type} tone="purple" />
               ) : null}
             </View>
+
             {report.duplicate_of ? (
               <Text style={styles.reportMeta}>duplicate_of: {report.duplicate_of}</Text>
             ) : null}
@@ -357,15 +364,15 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12
   },
+  reportImage: {
+    width: "100%",
+    height: 220,
+    borderRadius: radius.md
+  },
   muted: {
     color: colors.textMuted
   },
   error: {
     color: "#f87171"
-  },
-    reportImage: {
-    width: "100%",
-    height: 180,
-    borderRadius: radius.md,
   }
 });
