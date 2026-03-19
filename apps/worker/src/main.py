@@ -5,6 +5,7 @@ from typing import Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 from packages.core.config import settings
 from packages.core.logging import setup_logging
@@ -18,6 +19,10 @@ app = FastAPI(title="CrowdLens Worker", version="0.1.0")
 
 API_BASE = os.getenv("API_BASE", "http://localhost:8000")
 WORKER_ID = os.getenv("WORKER_ID", "worker-local-1")
+
+
+class ProcessReportTaskRequest(BaseModel):
+    report_id: str = Field(..., min_length=1)
 
 
 @app.get("/healthz")
@@ -85,10 +90,10 @@ async def _fail_job(client: httpx.AsyncClient, job_id: str, error: str) -> None:
 @app.post("/jobs/run-once")
 async def run_once():
     """
-    Pull exactly one job and process it.
-    This simulates the worker consuming Pub/Sub or Cloud Tasks later.
+    Local-dev only.
+    Pull exactly one job from the in-memory queue and process it.
     """
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=20.0) as client:
         job = await _fetch_next_job(client)
         if not job:
             return {"ok": True, "ran": False, "reason": "no_jobs"}
@@ -110,3 +115,32 @@ async def run_once():
             logger.exception("job_processing_failed", extra={"job_id": job.id, "error": err})
             await _fail_job(client, job.id, err)
             raise HTTPException(status_code=500, detail="job_failed")
+
+
+@app.post("/tasks/process-report")
+async def process_report_task(payload: ProcessReportTaskRequest):
+    """
+    Cloud Tasks target endpoint.
+    In production, API enqueues a task that hits this endpoint.
+    """
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        try:
+            await _upsert_event_from_report(client, payload.report_id)
+
+            logger.info(
+                "cloud_task_processed",
+                extra={
+                    "report_id": payload.report_id,
+                },
+            )
+            return {"ok": True, "processed": True, "report_id": payload.report_id}
+
+        except Exception as e:
+            logger.exception(
+                "cloud_task_processing_failed",
+                extra={
+                    "report_id": payload.report_id,
+                    "error": str(e),
+                },
+            )
+            raise HTTPException(status_code=500, detail="cloud_task_failed")
