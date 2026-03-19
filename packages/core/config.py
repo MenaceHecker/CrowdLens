@@ -30,5 +30,8 @@ class Settings(BaseSettings):
     WORKER_URL: str = "http://localhost:8001"
     TASKS_SERVICE_ACCOUNT_EMAIL: str = ""
 
+    GCS_BUCKET_NAME: str = ""
+    MEDIA_SIGNED_URL_EXPIRATION_MINUTES: int = 15
+
 
 settings = Settings()
