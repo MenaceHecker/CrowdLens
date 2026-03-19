@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 from packages.shared.models import (
     CreateReportRequest,
+    CreateUploadUrlRequest,
+    CreateUploadUrlResponse,
     Report,
     Job,
     NextJobRequest,
@@ -29,6 +31,7 @@ from apps.api.src.events import (
 from apps.api.src.repositories.reports import FirestoreReportRepository
 from apps.api.src.repositories.events import FirestoreEventRepository
 from apps.api.src.services.tasks import CloudTasksService
+from apps.api.src.services.storage import StorageService
 
 
 setup_logging(service="api", level=settings.LOG_LEVEL)
@@ -43,6 +46,7 @@ WS_MANAGER = WebSocketManager()
 report_repo = FirestoreReportRepository()
 event_repo = FirestoreEventRepository()
 tasks_service = CloudTasksService()
+storage_service = StorageService() if settings.GCS_BUCKET_NAME else None
 
 
 class UpsertFromReportRequest(BaseModel):
@@ -117,10 +121,35 @@ def debug_last_error():
     return LAST_ERROR or {"ok": True, "last_error": None}
 
 
+@app.post("/media/upload-url", response_model=CreateUploadUrlResponse)
+def create_upload_url(payload: CreateUploadUrlRequest):
+    if not storage_service:
+        raise HTTPException(status_code=400, detail="media_upload_not_configured")
+
+    object_path = storage_service.build_object_path(payload.filename)
+    upload_url = storage_service.generate_upload_signed_url(
+        object_path=object_path,
+        content_type=payload.content_type,
+    )
+
+    return CreateUploadUrlResponse(
+        object_path=object_path,
+        upload_url=upload_url,
+        content_type=payload.content_type,
+    )
+
+
 @app.post("/reports", response_model=Report)
 def create_report(payload: CreateReportRequest):
     rid = str(uuid4())
     user_id = "local-dev-user"
+
+    media_url = payload.media_url
+    if payload.media_path and storage_service:
+        try:
+            media_url = storage_service.generate_read_signed_url(payload.media_path)
+        except Exception:
+            media_url = None
 
     report = Report(
         id=rid,
@@ -130,7 +159,8 @@ def create_report(payload: CreateReportRequest):
         occurred_at=payload.occurred_at,
         created_at=datetime.now(timezone.utc),
         status="queued",
-        media_url=payload.media_url,
+        media_url=media_url,
+        media_path=payload.media_path,
     )
     report_repo.save(report)
 
@@ -326,12 +356,7 @@ def get_feed():
 
     for event in events:
         latest_report_id = event.report_ids[-1] if event.report_ids else None
-        items.append(
-            FeedItem(
-                event=event,
-                latest_report_id=latest_report_id,
-            )
-        )
+        items.append(FeedItem(event=event, latest_report_id=latest_report_id))
 
     return items
 
