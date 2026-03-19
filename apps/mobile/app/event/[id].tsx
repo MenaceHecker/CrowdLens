@@ -235,22 +235,21 @@ export default function EventDetailScreen() {
       </SectionCard>
 
             <SectionCard title="Source Reports">
-        {reports.map((report) => (
+                {reports.map((report) => (
           <View key={report.id} style={styles.reportItem}>
             <Text style={styles.reportText}>{report.text}</Text>
+            {report.media_url ? (
+              <Image source={{ uri: report.media_url }} style={styles.reportImage} />
+            ) : null}
             <View style={styles.badgeRow}>
               <Badge
                 label={report.is_duplicate ? "duplicate" : "unique"}
                 tone={report.is_duplicate ? "yellow" : "green"}
               />
+              {event.briefing?.incident_type ? (
+                <Badge label={event.briefing.incident_type} tone="purple" />
+              ) : null}
             </View>
-            {report.media_url ? (
-              <Image
-                source={{ uri: report.media_url }}
-                style={styles.reportImage}
-                contentFit="cover"
-              />
-            ) : null}
             {report.duplicate_of ? (
               <Text style={styles.reportMeta}>duplicate_of: {report.duplicate_of}</Text>
             ) : null}
