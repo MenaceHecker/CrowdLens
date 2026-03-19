@@ -23,6 +23,18 @@ class CreateReportRequest(BaseModel):
     location: LatLng
     occurred_at: Optional[datetime] = None
     media_url: Optional[str] = None
+    media_path: Optional[str] = None
+
+
+class CreateUploadUrlRequest(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=255)
+    content_type: str = Field(..., min_length=1, max_length=255)
+
+
+class CreateUploadUrlResponse(BaseModel):
+    object_path: str
+    upload_url: str
+    content_type: str
 
 
 class Report(BaseModel):
@@ -34,6 +46,7 @@ class Report(BaseModel):
     created_at: datetime
     status: ReportStatus = "submitted"
     media_url: Optional[str] = None
+    media_path: Optional[str] = None
 
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
