@@ -24,5 +24,11 @@ class Settings(BaseSettings):
     FIRESTORE_REPORTS_COLLECTION: str = "reports"
     FIRESTORE_EVENTS_COLLECTION: str = "events"
 
+    USE_CLOUD_TASKS: bool = False
+    TASKS_LOCATION: str = "us-central1"
+    TASKS_QUEUE_NAME: str = "process-report"
+    WORKER_URL: str = "http://localhost:8001"
+    TASKS_SERVICE_ACCOUNT_EMAIL: str = ""
+
 
 settings = Settings()
