@@ -147,9 +147,12 @@ def create_media_upload_url(
 
 
 @app.post("/reports", response_model=Report)
-def create_report(payload: CreateReportRequest):
+def create_report(
+    payload: CreateReportRequest,
+    auth_user: dict = Depends(verify_bearer_token),
+):
     rid = str(uuid4())
-    user_id = "local-dev-user"
+    user_id = auth_user["uid"]
 
     report = Report(
         id=rid,
