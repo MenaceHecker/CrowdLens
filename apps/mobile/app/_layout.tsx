@@ -13,6 +13,7 @@ export default function RootLayout() {
     >
       <Stack.Screen name="index" options={{ title: "CrowdLens Feed" }} />
       <Stack.Screen name="map" options={{ title: "Incident Map" }} />
+      <Stack.Screen name="auth" options={{ title: "Authentication" }} />
       <Stack.Screen name="event/[id]" options={{ title: "Event Details" }} />
       <Stack.Screen name="report" options={{ title: "Submit Report" }} />
     </Stack>
