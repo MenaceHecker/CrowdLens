@@ -7,6 +7,9 @@ from fastapi import FastAPI, Request, HTTPException, Response, WebSocket, WebSoc
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from fastapi import Depends
+from apps.api.src.auth import init_firebase_admin, verify_bearer_token
+
 from packages.shared.models import (
     CreateReportRequest,
     Report,
@@ -36,6 +39,7 @@ setup_logging(service="api", level=settings.LOG_LEVEL)
 logger = logging.getLogger("api")
 
 app = FastAPI(title="CrowdLens API", version="0.1.0")
+init_firebase_admin()
 
 JOB_QUEUE = InMemoryJobQueue()
 LAST_ERROR: dict | None = None
@@ -126,7 +130,9 @@ def debug_last_error():
 
 
 @app.post("/media/upload-url", response_model=MediaUploadUrlResponse)
-def create_media_upload_url(payload: MediaUploadUrlRequest):
+def create_media_upload_url(
+    payload: MediaUploadUrlRequest,
+    auth_user: dict = Depends(verify_bearer_token),):
     if not settings.GCS_BUCKET_NAME:
         raise HTTPException(status_code=500, detail="gcs_bucket_not_configured")
 
