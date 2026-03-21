@@ -12,9 +12,6 @@ import { getIdToken } from "../auth";
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getIdToken();
 
-  console.log("AUTH_TOKEN_PRESENT", !!token);
-  console.log("AUTH_TOKEN_PREFIX", token ? token.slice(0, 25) : null);
-
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
