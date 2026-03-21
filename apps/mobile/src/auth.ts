@@ -8,11 +8,15 @@ import {
 import { auth } from "./firebase";
 
 export async function registerWithEmail(email: string, password: string) {
-  return createUserWithEmailAndPassword(auth, email, password);
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  await cred.user.getIdToken(true);
+  return cred;
 }
 
 export async function loginWithEmail(email: string, password: string) {
-  return signInWithEmailAndPassword(auth, email, password);
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  await cred.user.getIdToken(true);
+  return cred;
 }
 
 export async function logout() {
@@ -26,5 +30,5 @@ export function subscribeToAuth(callback: (user: User | null) => void) {
 export async function getIdToken(): Promise<string | null> {
   const user = auth.currentUser;
   if (!user) return null;
-  return user.getIdToken();
+  return user.getIdToken(true);
 }
