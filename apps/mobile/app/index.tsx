@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useFocusEffect } from "expo-router";
+import { Link, useFocusEffect, router } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
@@ -10,8 +10,9 @@ import {
   View
 } from "react-native";
 
-import { getFeed, processNextJob } from "../src/api/client";
+import { getFeed } from "../src/api/client";
 import { WS_BASE } from "../src/api/config";
+import { subscribeToAuth, logout } from "../src/auth";
 import { EventCard } from "../src/components/EventCard";
 import { colors, radius, spacing } from "../src/styles/theme";
 import { FeedItem } from "../src/types/api";
@@ -22,8 +23,8 @@ export default function FeedScreen() {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [processingJob, setProcessingJob] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -67,10 +68,6 @@ export default function FeedScreen() {
       }
     };
 
-    ws.onerror = () => {
-      // polling remains as fallback
-    };
-
     ws.onclose = () => {
       socketRef.current = null;
     };
@@ -100,25 +97,21 @@ export default function FeedScreen() {
     }
   }, []);
 
-  const handleProcessNext = async () => {
-    try {
-      setProcessingJob(true);
-      setError(null);
-      await processNextJob();
-      await loadFeed(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to process next job");
-    } finally {
-      setProcessingJob(false);
-    }
-  };
-
   useEffect(() => {
-    loadFeed();
-    startPolling();
-    connectWebSocket();
+    const unsubscribe = subscribeToAuth((user) => {
+      if (!user) {
+        router.replace("/auth");
+        return;
+      }
+
+      setUserEmail(user.email ?? null);
+      loadFeed();
+      startPolling();
+      connectWebSocket();
+    });
 
     return () => {
+      unsubscribe();
       stopPolling();
       disconnectWebSocket();
     };
@@ -137,6 +130,11 @@ export default function FeedScreen() {
     }, [startPolling, stopPolling, connectWebSocket, disconnectWebSocket])
   );
 
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/auth");
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -154,6 +152,7 @@ export default function FeedScreen() {
           <Text style={styles.subheading}>
             Ranked by severity, confidence, freshness, and velocity
           </Text>
+          {userEmail ? <Text style={styles.userText}>Signed in as {userEmail}</Text> : null}
         </View>
 
         <View style={styles.actionRow}>
@@ -162,21 +161,15 @@ export default function FeedScreen() {
               <Text style={styles.buttonText}>+ Report</Text>
             </Pressable>
           </Link>
-          
+
           <Link href="/map" asChild>
             <Pressable style={[styles.button, styles.secondaryButton]}>
               <Text style={styles.buttonTextSecondary}>Open Map</Text>
             </Pressable>
           </Link>
 
-          <Pressable
-            style={[styles.button, styles.secondaryButton]}
-            onPress={handleProcessNext}
-            disabled={processingJob}
-          >
-            <Text style={styles.buttonTextSecondary}>
-              {processingJob ? "Processing..." : "Process Next Job"}
-            </Text>
+          <Pressable style={[styles.button, styles.secondaryButton]} onPress={handleLogout}>
+            <Text style={styles.buttonTextSecondary}>Logout</Text>
           </Pressable>
         </View>
       </View>
@@ -242,6 +235,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 4,
     lineHeight: 18
+  },
+  userText: {
+    color: colors.textSoft,
+    marginTop: 8
   },
   actionRow: {
     flexDirection: "row",
