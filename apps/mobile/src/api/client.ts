@@ -7,11 +7,16 @@ import {
   MediaUploadUrlResponse,
   Report,
 } from "../types/api";
+import { getIdToken } from "../auth";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getIdToken();
+
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers || {}),
     },
     ...init,
   });
@@ -43,7 +48,9 @@ export async function createReport(payload: CreateReportRequest): Promise<Report
   });
 }
 
-export async function getMediaUploadUrl(payload: MediaUploadUrlRequest): Promise<MediaUploadUrlResponse> {
+export async function getMediaUploadUrl(
+  payload: MediaUploadUrlRequest
+): Promise<MediaUploadUrlResponse> {
   return apiFetch<MediaUploadUrlResponse>("/media/upload-url", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -51,20 +58,5 @@ export async function getMediaUploadUrl(payload: MediaUploadUrlRequest): Promise
 }
 
 export async function processNextJob(): Promise<{ ok: boolean; ran: boolean; reason?: string; job_id?: string }> {
-  const workerBase =
-    process.env.EXPO_PUBLIC_WORKER_BASE || API_BASE.replace(":8000", ":8001");
-
-  const response = await fetch(`${workerBase}/jobs/run-once`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Worker ${response.status}: ${text}`);
-  }
-
-  return response.json();
+  throw new Error("Disabled in production mode");
 }
