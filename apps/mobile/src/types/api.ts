@@ -33,6 +33,7 @@ export interface Report {
   media_url: string | null;
   is_duplicate: boolean;
   duplicate_of: string | null;
+  trust_score: number;
 }
 
 export interface Event {
@@ -83,3 +84,4 @@ export interface MediaUploadUrlResponse {
   view_url: string;
   content_type: string;
 }
+
