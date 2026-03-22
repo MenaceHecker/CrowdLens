@@ -258,7 +258,6 @@ export default function EventDetailScreen() {
               ) : null}
             </View>
 
-            <Text style={styles.reportMeta}>trust_score: {report.trust_score}</Text>
             {report.duplicate_of ? (
               <Text style={styles.reportMeta}>duplicate_of: {report.duplicate_of}</Text>
             ) : null}
