@@ -10,6 +10,12 @@ from pydantic import BaseModel, Field
 from fastapi import Depends
 from apps.api.src.auth import init_firebase_admin, verify_bearer_token
 
+from apps.api.src.abuse import (
+    enforce_duplicate_submission_rule,
+    enforce_report_text_quality,
+    enforce_submission_cooldown,
+)
+
 from packages.shared.models import (
     CreateReportRequest,
     Report,
@@ -153,6 +159,13 @@ def create_report(
 ):
     rid = str(uuid4())
     user_id = auth_user["uid"]
+    now = datetime.now(timezone.utc)
+
+    enforce_report_text_quality(payload.text)
+
+    recent_reports = report_repo.list_by_user_id(user_id=user_id, limit=20)
+    enforce_submission_cooldown(recent_reports, now=now)
+    enforce_duplicate_submission_rule(payload.text, recent_reports, now=now)
 
     report = Report(
         id=rid,
@@ -160,7 +173,7 @@ def create_report(
         text=payload.text,
         location=payload.location,
         occurred_at=payload.occurred_at,
-        created_at=datetime.now(timezone.utc),
+        created_at=now,
         status="queued",
         media_url=payload.media_url,
     )
@@ -174,6 +187,7 @@ def create_report(
                 "report_id": rid,
                 "task_name": task_info["task_name"],
                 "target_url": task_info["target_url"],
+                "user_id": user_id,
             },
         )
     else:
@@ -184,6 +198,7 @@ def create_report(
                 "job_id": job.id,
                 "job_type": job.type,
                 "report_id": rid,
+                "user_id": user_id,
             },
         )
 
