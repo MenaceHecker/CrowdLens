@@ -46,10 +46,10 @@ class Report(BaseModel):
     created_at: datetime
     status: ReportStatus = "submitted"
     media_url: Optional[str] = None
-    media_path: Optional[str] = None
 
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
+    trust_score: float = Field(default=0.6, ge=0.0, le=1.0)
 
 
 class JobPayload(BaseModel):
