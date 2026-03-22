@@ -32,5 +32,9 @@ class Settings(BaseSettings):
 
     GCS_BUCKET_NAME: str = ""
 
+    REPORT_MIN_TEXT_LENGTH: int = 8
+    REPORT_SUBMISSION_COOLDOWN_SECONDS: int = 15
+    REPORT_DUPLICATE_WINDOW_MINUTES: int = 5
+
 
 settings = Settings()
