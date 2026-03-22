@@ -27,3 +27,17 @@ class FirestoreReportRepository:
             if report:
                 reports.append(report)
         return reports
+
+    def list_by_user_id(self, user_id: str, limit: int = 20) -> List[Report]:
+        query = (
+            self.collection
+            .where("user_id", "==", user_id)
+            .order_by("created_at", direction="DESCENDING")
+            .limit(limit)
+        )
+
+        results: List[Report] = []
+        for doc in query.stream():
+            data = doc.to_dict() or {}
+            results.append(Report.model_validate(data))
+        return results
