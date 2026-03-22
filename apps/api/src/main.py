@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 from fastapi import Depends
 from apps.api.src.auth import init_firebase_admin, verify_bearer_token
 
+from apps.api.src.trust import compute_report_trust_score
+
 from apps.api.src.abuse import (
     enforce_duplicate_submission_rule,
     enforce_report_text_quality,
@@ -177,6 +179,7 @@ def create_report(
         status="queued",
         media_url=payload.media_url,
     )
+    report.trust_score = compute_report_trust_score(report)
     report_repo.save(report)
 
     if settings.USE_CLOUD_TASKS:
