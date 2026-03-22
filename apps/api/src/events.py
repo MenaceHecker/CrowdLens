@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 from uuid import uuid4
+from statistics import mean
+from packages.shared.models import Event, Report
 
 from packages.shared.models import Event, LatLng, Report
 
@@ -137,6 +139,7 @@ def _ranking_score(event: Event) -> float:
     return round(max(total, 0.0), 2)
 
 
+
 def refresh_event_metrics(event: Event, now: Optional[datetime] = None) -> Event:
     now = now or datetime.now(timezone.utc)
 
@@ -209,6 +212,7 @@ def upsert_event_from_report(
     existing_event.report_count = len(updated_reports)
     existing_event.unique_report_count = len(unique_reports)
     existing_event.duplicate_report_count = existing_event.report_count - existing_event.unique_report_count
+    existing_event.confidence = compute_event_confidence(existing_reports)
     existing_event.updated_at = now
     existing_event.last_seen_at = now
     existing_event.trend = _derive_trend(existing_event.unique_report_count)
@@ -218,3 +222,24 @@ def upsert_event_from_report(
 
     refresh_event_metrics(existing_event, now)
     return existing_event, False
+
+
+def compute_event_confidence(reports: list[Report]) -> float:
+    if not reports:
+        return 0.3
+
+    unique_reports = [r for r in reports if not r.is_duplicate]
+    duplicate_reports = [r for r in reports if r.is_duplicate]
+
+    unique_weight = sum(r.trust_score for r in unique_reports)
+    duplicate_weight = sum(r.trust_score * 0.35 for r in duplicate_reports)
+
+    base = 0.35 + min(0.45, unique_weight * 0.12) + min(0.12, duplicate_weight * 0.04)
+
+    if len(unique_reports) >= 3:
+        base += 0.05
+
+    if any(r.media_url for r in reports):
+        base += 0.05
+
+    return max(0.3, min(0.98, round(base, 2)))
