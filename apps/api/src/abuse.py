@@ -40,10 +40,7 @@ def is_low_signal_text(text: str) -> bool:
 
 def enforce_report_text_quality(text: str) -> None:
     if is_low_signal_text(text):
-        raise HTTPException(
-            status_code=400,
-            detail="low_quality_report_text",
-        )
+        raise HTTPException(status_code=400, detail="low_quality_report_text")
 
 
 def find_recent_duplicate_text(
@@ -79,10 +76,7 @@ def enforce_submission_cooldown(
 
     if elapsed < settings.REPORT_SUBMISSION_COOLDOWN_SECONDS:
         remaining = int(settings.REPORT_SUBMISSION_COOLDOWN_SECONDS - elapsed)
-        raise HTTPException(
-            status_code=429,
-            detail=f"report_cooldown_active:{remaining}s",
-        )
+        raise HTTPException(status_code=429, detail=f"report_cooldown_active:{remaining}s")
 
 
 def enforce_duplicate_submission_rule(
@@ -92,7 +86,4 @@ def enforce_duplicate_submission_rule(
 ) -> None:
     duplicate = find_recent_duplicate_text(candidate_text, recent_reports, now=now)
     if duplicate:
-        raise HTTPException(
-            status_code=409,
-            detail=f"duplicate_report_text:{duplicate.id}",
-        )
+        raise HTTPException(status_code=409, detail=f"duplicate_report_text:{duplicate.id}")

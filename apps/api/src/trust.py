@@ -1,8 +1,8 @@
-from packages.shared.models import Report
+from packages.shared.models import Report, UserProfile
 
 
-def compute_report_trust_score(report: Report) -> float:
-    score = 0.6
+def compute_report_trust_score(report: Report, profile: UserProfile) -> float:
+    score = 0.45 + (profile.reputation_score * 0.3)
 
     text = report.text.lower().strip()
 
