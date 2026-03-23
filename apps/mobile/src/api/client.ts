@@ -8,6 +8,7 @@ import {
   Report,
 } from "../types/api";
 import { getIdToken } from "../auth";
+import { MeResponse } from "../types/api";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getIdToken();
@@ -59,4 +60,8 @@ export async function getMediaUploadUrl(
 
 export async function processNextJob(): Promise<{ ok: boolean; ran: boolean; reason?: string; job_id?: string }> {
   throw new Error("Disabled in production mode");
+}
+
+export async function getMe(): Promise<MeResponse> {
+  return apiFetch<MeResponse>("/me");
 }
