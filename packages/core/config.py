@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     FIRESTORE_DATABASE: str = "(default)"
     FIRESTORE_REPORTS_COLLECTION: str = "reports"
     FIRESTORE_EVENTS_COLLECTION: str = "events"
+    FIRESTORE_USERS_COLLECTION: str = "users"
 
     USE_CLOUD_TASKS: bool = False
     TASKS_LOCATION: str = "us-central1"
@@ -35,6 +36,11 @@ class Settings(BaseSettings):
     REPORT_MIN_TEXT_LENGTH: int = 8
     REPORT_SUBMISSION_COOLDOWN_SECONDS: int = 15
     REPORT_DUPLICATE_WINDOW_MINUTES: int = 5
+
+    USER_REPUTATION_DEFAULT: float = 0.5
+    USER_REPUTATION_BONUS_UNIQUE: float = 0.03
+    USER_REPUTATION_PENALTY_DUPLICATE: float = 0.04
+    USER_REPUTATION_PENALTY_LOW_QUALITY: float = 0.05
 
 
 settings = Settings()
