@@ -85,3 +85,20 @@ export interface MediaUploadUrlResponse {
   content_type: string;
 }
 
+export interface UserProfile {
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  reputation_score: number;
+  total_reports: number;
+  unique_reports: number;
+  duplicate_reports: number;
+  low_quality_rejections: number;
+  last_report_at: string | null;
+}
+
+export interface MeResponse {
+  user_id: string;
+  email: string | null;
+  profile: UserProfile;
+}
