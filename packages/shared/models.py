@@ -23,18 +23,6 @@ class CreateReportRequest(BaseModel):
     location: LatLng
     occurred_at: Optional[datetime] = None
     media_url: Optional[str] = None
-    media_path: Optional[str] = None
-
-
-class CreateUploadUrlRequest(BaseModel):
-    filename: str = Field(..., min_length=1, max_length=255)
-    content_type: str = Field(..., min_length=1, max_length=255)
-
-
-class CreateUploadUrlResponse(BaseModel):
-    object_path: str
-    upload_url: str
-    content_type: str
 
 
 class Report(BaseModel):
@@ -50,6 +38,21 @@ class Report(BaseModel):
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
     trust_score: float = Field(default=0.6, ge=0.0, le=1.0)
+
+
+class UserProfile(BaseModel):
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    reputation_score: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    total_reports: int = 0
+    unique_reports: int = 0
+    duplicate_reports: int = 0
+    low_quality_rejections: int = 0
+
+    last_report_at: Optional[datetime] = None
 
 
 class JobPayload(BaseModel):
