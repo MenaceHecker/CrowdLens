@@ -237,6 +237,16 @@ def get_report(report_id: str):
         raise HTTPException(status_code=404, detail="report_not_found")
     return report
 
+@app.get("/me")
+def get_me(auth_user: dict = Depends(verify_bearer_token)):
+    user_id = auth_user["uid"]
+    profile = user_repo.get_or_create(user_id)
+    return {
+        "user_id": user_id,
+        "email": auth_user.get("email"),
+        "profile": profile.model_dump(mode="json"),
+    }
+
 
 @app.get("/jobs", response_model=list[Job])
 def list_jobs():
