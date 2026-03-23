@@ -12,6 +12,10 @@ from apps.api.src.auth import init_firebase_admin, verify_bearer_token
 
 from apps.api.src.trust import compute_report_trust_score
 
+from apps.api.src.repositories.users import FirestoreUserRepository
+from apps.api.src.reputation import apply_low_quality_rejection, apply_report_submission
+from apps.api.src.trust import compute_report_trust_score
+
 from apps.api.src.abuse import (
     enforce_duplicate_submission_rule,
     enforce_report_text_quality,
@@ -57,6 +61,8 @@ report_repo = FirestoreReportRepository()
 event_repo = FirestoreEventRepository()
 tasks_service = CloudTasksService()
 storage_service = StorageService()
+
+user_repo = FirestoreUserRepository()
 
 
 class UpsertFromReportRequest(BaseModel):
@@ -163,7 +169,14 @@ def create_report(
     user_id = auth_user["uid"]
     now = datetime.now(timezone.utc)
 
-    enforce_report_text_quality(payload.text)
+    profile = user_repo.get_or_create(user_id)
+
+    try:
+        enforce_report_text_quality(payload.text)
+    except HTTPException:
+        profile = apply_low_quality_rejection(profile)
+        user_repo.save(profile)
+        raise
 
     recent_reports = report_repo.list_by_user_id(user_id=user_id, limit=20)
     enforce_submission_cooldown(recent_reports, now=now)
@@ -179,8 +192,13 @@ def create_report(
         status="queued",
         media_url=payload.media_url,
     )
-    report.trust_score = compute_report_trust_score(report)
+
+    report.trust_score = compute_report_trust_score(report, profile)
+
     report_repo.save(report)
+
+    profile = apply_report_submission(profile, report)
+    user_repo.save(profile)
 
     if settings.USE_CLOUD_TASKS:
         task_info = tasks_service.create_process_report_task(report_id=rid)
@@ -191,6 +209,8 @@ def create_report(
                 "task_name": task_info["task_name"],
                 "target_url": task_info["target_url"],
                 "user_id": user_id,
+                "trust_score": report.trust_score,
+                "reputation_score": profile.reputation_score,
             },
         )
     else:
@@ -202,6 +222,8 @@ def create_report(
                 "job_type": job.type,
                 "report_id": rid,
                 "user_id": user_id,
+                "trust_score": report.trust_score,
+                "reputation_score": profile.reputation_score,
             },
         )
 
