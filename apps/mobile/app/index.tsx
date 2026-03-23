@@ -10,12 +10,13 @@ import {
   View
 } from "react-native";
 
-import { getFeed } from "../src/api/client";
+import { getFeed, getMe } from "../src/api/client";
 import { WS_BASE } from "../src/api/config";
 import { subscribeToAuth, logout } from "../src/auth";
 import { EventCard } from "../src/components/EventCard";
 import { colors, radius, spacing } from "../src/styles/theme";
-import { FeedItem } from "../src/types/api";
+import { FeedItem, UserProfile } from "../src/types/api";
+
 
 const POLL_INTERVAL_MS = 8000;
 
@@ -28,6 +29,8 @@ export default function FeedScreen() {
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   const loadFeed = async (silent = false) => {
     try {
@@ -106,6 +109,7 @@ export default function FeedScreen() {
 
       setUserEmail(user.email ?? null);
       loadFeed();
+      getMe().then((data) => setProfile(data.profile)).catch(() => null);
       startPolling();
       connectWebSocket();
     });
@@ -153,6 +157,11 @@ export default function FeedScreen() {
             Ranked by severity, confidence, freshness, and velocity
           </Text>
           {userEmail ? <Text style={styles.userText}>Signed in as {userEmail}</Text> : null}
+          {profile ? (
+            <Text style={styles.uidText}>
+              Reputation: {profile.reputation_score} · Reports: {profile.total_reports} · Unique: {profile.unique_reports}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.actionRow}>
@@ -239,6 +248,10 @@ const styles = StyleSheet.create({
   userText: {
     color: colors.textSoft,
     marginTop: 8
+  },
+  uidText: {
+    color: colors.textMuted,
+    marginTop: 4
   },
   actionRow: {
     flexDirection: "row",
