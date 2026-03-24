@@ -12,33 +12,36 @@ import {
 
 import { getFeed, getMe } from "../src/api/client";
 import { WS_BASE } from "../src/api/config";
-import { subscribeToAuth, logout } from "../src/auth";
+import { logout } from "../src/auth";
+import { useAuthUser } from "../src/useAuthUser";
 import { EventCard } from "../src/components/EventCard";
 import { colors, radius, spacing } from "../src/styles/theme";
 import { FeedItem, UserProfile } from "../src/types/api";
 
-
-const POLL_INTERVAL_MS = 8000;
+const POLL_INTERVAL_MS = 15000;
 
 export default function FeedScreen() {
+  const { user, loading: authLoading } = useAuthUser();
+
   const [items, setItems] = useState<FeedItem[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [realtimeStatus, setRealtimeStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
-
-  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   const loadFeed = async (silent = false) => {
     try {
       if (!silent) {
         setError(null);
       }
+
       const data = await getFeed();
       setItems(data);
+
       if (!silent) {
         setError(null);
       }
@@ -52,36 +55,54 @@ export default function FeedScreen() {
     }
   };
 
-  const connectWebSocket = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.close();
+  const loadProfile = async () => {
+    try {
+      const me = await getMe();
+      setProfile(me.profile);
+    } catch {
+      // ignore profile fetch failures for now
     }
-
-    const ws = new WebSocket(`${WS_BASE}/ws/feed`);
-    socketRef.current = ws;
-
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "feed_updated") {
-          loadFeed(true);
-        }
-      } catch {
-        // ignore malformed messages
-      }
-    };
-
-    ws.onclose = () => {
-      socketRef.current = null;
-    };
-  }, []);
+  };
 
   const disconnectWebSocket = useCallback(() => {
     if (socketRef.current) {
       socketRef.current.close();
       socketRef.current = null;
     }
+    setRealtimeStatus("disconnected");
   }, []);
+
+  const connectWebSocket = useCallback(() => {
+    disconnectWebSocket();
+    setRealtimeStatus("connecting");
+
+    const ws = new WebSocket(`${WS_BASE}/ws/feed`);
+    socketRef.current = ws;
+
+    ws.onopen = () => {
+      setRealtimeStatus("connected");
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "feed_updated") {
+          await loadFeed(true);
+        }
+      } catch {
+        // ignore malformed messages
+      }
+    };
+
+    ws.onerror = () => {
+      setRealtimeStatus("disconnected");
+    };
+
+    ws.onclose = () => {
+      setRealtimeStatus("disconnected");
+      socketRef.current = null;
+    };
+  }, [disconnectWebSocket]);
 
   const startPolling = useCallback(() => {
     if (intervalRef.current) {
@@ -101,29 +122,32 @@ export default function FeedScreen() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeToAuth((user) => {
-      if (!user) {
-        router.replace("/auth");
-        return;
-      }
+    if (authLoading) {
+      return;
+    }
 
-      setUserEmail(user.email ?? null);
-      loadFeed();
-      getMe().then((data) => setProfile(data.profile)).catch(() => null);
-      startPolling();
-      connectWebSocket();
-    });
+    if (!user) {
+      router.replace("/auth");
+      return;
+    }
+
+    loadFeed();
+    loadProfile();
+    startPolling();
+    connectWebSocket();
 
     return () => {
-      unsubscribe();
       stopPolling();
       disconnectWebSocket();
     };
-  }, [startPolling, stopPolling, connectWebSocket, disconnectWebSocket]);
+  }, [user, authLoading, startPolling, stopPolling, connectWebSocket, disconnectWebSocket]);
 
   useFocusEffect(
     useCallback(() => {
+      if (!user) return;
+
       loadFeed(true);
+      loadProfile();
       startPolling();
       connectWebSocket();
 
@@ -131,7 +155,7 @@ export default function FeedScreen() {
         stopPolling();
         disconnectWebSocket();
       };
-    }, [startPolling, stopPolling, connectWebSocket, disconnectWebSocket])
+    }, [user, startPolling, stopPolling, connectWebSocket, disconnectWebSocket])
   );
 
   const handleLogout = async () => {
@@ -139,7 +163,7 @@ export default function FeedScreen() {
     router.replace("/auth");
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
@@ -156,7 +180,11 @@ export default function FeedScreen() {
           <Text style={styles.subheading}>
             Ranked by severity, confidence, freshness, and velocity
           </Text>
-          {userEmail ? <Text style={styles.userText}>Signed in as {userEmail}</Text> : null}
+
+          {user?.email ? (
+            <Text style={styles.userText}>Signed in as {user.email}</Text>
+          ) : null}
+
           {profile ? (
             <Text style={styles.uidText}>
               Reputation: {profile.reputation_score} · Reports: {profile.total_reports} · Unique: {profile.unique_reports}
@@ -183,8 +211,15 @@ export default function FeedScreen() {
         </View>
       </View>
 
-      <View style={styles.pollingBox}>
-        <Text style={styles.pollingText}>Realtime enabled · polling fallback every 8 seconds</Text>
+      <View style={styles.realtimeBox}>
+        <Text style={styles.realtimeText}>
+          Realtime: {realtimeStatus === "connected"
+            ? "connected"
+            : realtimeStatus === "connecting"
+            ? "connecting..."
+            : "disconnected"}
+        </Text>
+        <Text style={styles.pollingText}>Polling fallback every 15 seconds</Text>
       </View>
 
       {error ? (
@@ -203,6 +238,7 @@ export default function FeedScreen() {
             onRefresh={() => {
               setRefreshing(true);
               loadFeed();
+              loadProfile();
             }}
           />
         }
@@ -251,7 +287,8 @@ const styles = StyleSheet.create({
   },
   uidText: {
     color: colors.textMuted,
-    marginTop: 4
+    fontSize: 12,
+    marginTop: 2
   },
   actionRow: {
     flexDirection: "row",
@@ -280,7 +317,7 @@ const styles = StyleSheet.create({
     color: colors.textSoft,
     fontWeight: "700"
   },
-  pollingBox: {
+  realtimeBox: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -289,9 +326,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginBottom: spacing.md
   },
+  realtimeText: {
+    color: colors.textSoft,
+    fontSize: 12,
+    fontWeight: "700"
+  },
   pollingText: {
     color: colors.textMuted,
-    fontSize: 12
+    fontSize: 12,
+    marginTop: 2
   },
   center: {
     flex: 1,
