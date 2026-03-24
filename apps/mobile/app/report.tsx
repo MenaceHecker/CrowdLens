@@ -1,191 +1,77 @@
 import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from "react-native";
 import { router } from "expo-router";
-import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 
-import { createReport, getMediaUploadUrl, processNextJob } from "../src/api/client";
+import { createReport } from "../src/api/client";
 import { colors, radius, spacing } from "../src/styles/theme";
-
-type PickedMedia = {
-  uri: string;
-  mimeType: string;
-  filename: string;
-};
 
 export default function ReportScreen() {
   const [text, setText] = useState("");
-  const [lat, setLat] = useState("33.7756");
-  const [lng, setLng] = useState("-84.3963");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitAndProcess, setSubmitAndProcess] = useState(false);
-  const [media, setMedia] = useState<PickedMedia | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const pickMedia = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
-      allowsEditing: false,
-      quality: 0.8,
-    });
-
-    if (result.canceled) {
-      return;
-    }
-
-    const asset = result.assets[0];
-    setMedia({
-      uri: asset.uri,
-      mimeType: asset.mimeType || "application/octet-stream",
-      filename: asset.fileName || `upload-${Date.now()}`,
-    });
-  };
-
-  const uploadMediaIfNeeded = async (): Promise<string | null> => {
-    if (!media) return null;
-
-    const bundle = await getMediaUploadUrl({
-      filename: media.filename,
-      content_type: media.mimeType,
-    });
-
-    const fileResponse = await fetch(media.uri);
-    const blob = await fileResponse.blob();
-
-    const uploadResp = await fetch(bundle.upload_url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": bundle.content_type,
-      },
-      body: blob,
-    });
-
-    if (!uploadResp.ok) {
-      throw new Error(`Media upload failed: ${uploadResp.status}`);
-    }
-
-    return bundle.view_url;
-  };
-
-  const submit = async (alsoProcess: boolean) => {
+  const handleSubmit = async () => {
     if (!text.trim()) {
-      Alert.alert("Missing text", "Please enter a report.");
+      Alert.alert("Missing info", "Please describe the incident.");
       return;
     }
 
     try {
-      setSubmitting(true);
-      setSubmitAndProcess(alsoProcess);
-
-      const mediaUrl = await uploadMediaIfNeeded();
+      setLoading(true);
 
       await createReport({
-        text: text.trim(),
+        text,
         location: {
-          lat: Number(lat),
-          lng: Number(lng),
-        },
-        media_url: mediaUrl,
+          lat: 33.7756,
+          lng: -84.3963
+        }
       });
 
-      if (alsoProcess) {
-        await processNextJob();
-        Alert.alert("Success", "Report submitted and one queued job was processed.");
-      } else {
-        Alert.alert("Report submitted", "Your report was queued successfully.");
-      }
+      Alert.alert("Report submitted", "Your report is being processed.");
 
+      setText("");
       router.replace("/");
     } catch (err) {
-      Alert.alert("Error", err instanceof Error ? err.message : "Failed to submit report");
+      Alert.alert(
+        "Error",
+        err instanceof Error ? err.message : "Failed to submit report"
+      );
     } finally {
-      setSubmitting(false);
-      setSubmitAndProcess(false);
+      setLoading(false);
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.heading}>Submit Incident Report</Text>
-      <Text style={styles.subheading}>
-        Send a report to the deployed CrowdLens backend.
-      </Text>
+      <Text style={styles.heading}>Report an Incident</Text>
 
-      <View style={styles.devNotice}>
-        <Text style={styles.devNoticeTitle}>Media support</Text>
-        <Text style={styles.devNoticeText}>
-          You can attach one image or video. It uploads directly to Cloud Storage.
-        </Text>
-      </View>
-
-      <Text style={styles.label}>What did you observe?</Text>
       <TextInput
-        style={[styles.input, styles.textArea]}
-        placeholder="Describe what you observed..."
-        placeholderTextColor={colors.textMuted}
-        multiline
+        style={styles.input}
+        placeholder="Describe what’s happening..."
+        placeholderTextColor="#888"
         value={text}
         onChangeText={setText}
+        multiline
       />
 
-      <Pressable style={[styles.button, styles.secondaryButton]} onPress={pickMedia}>
-        <Text style={styles.secondaryButtonText}>{media ? "Change Attachment" : "Pick Image / Video"}</Text>
+      <Pressable
+        style={[styles.button, loading && styles.disabled]}
+        onPress={handleSubmit}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="white" />
+        ) : (
+          <Text style={styles.buttonText}>Submit Report</Text>
+        )}
       </Pressable>
-
-      {media ? (
-        <View style={styles.previewBox}>
-          <Text style={styles.previewLabel}>{media.filename}</Text>
-          {media.mimeType.startsWith("image/") ? (
-            <Image source={{ uri: media.uri }} style={styles.previewImage} />
-          ) : (
-            <Text style={styles.previewLabel}>Video selected</Text>
-          )}
-        </View>
-      ) : null}
-
-      <View style={styles.row}>
-        <View style={styles.col}>
-          <Text style={styles.label}>Latitude</Text>
-          <TextInput
-            style={styles.input}
-            value={lat}
-            onChangeText={setLat}
-            keyboardType="numeric"
-            placeholderTextColor={colors.textMuted}
-          />
-        </View>
-
-        <View style={styles.col}>
-          <Text style={styles.label}>Longitude</Text>
-          <TextInput
-            style={styles.input}
-            value={lng}
-            onChangeText={setLng}
-            keyboardType="numeric"
-            placeholderTextColor={colors.textMuted}
-          />
-        </View>
-      </View>
-
-      <View style={styles.actions}>
-        <Pressable
-          style={[styles.button, styles.secondaryButton]}
-          onPress={() => submit(false)}
-          disabled={submitting}
-        >
-          <Text style={styles.secondaryButtonText}>
-            {submitting && !submitAndProcess ? "Submitting..." : "Submit Only"}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.button, styles.primaryButton]}
-          onPress={() => submit(true)}
-          disabled={submitting}
-        >
-          <Text style={styles.primaryButtonText}>
-            {submitting && submitAndProcess ? "Submitting..." : "Submit & Process Locally"}
-          </Text>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -194,102 +80,35 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg,
-    padding: spacing.md,
+    padding: spacing.md
   },
   heading: {
     color: colors.text,
     fontSize: 24,
     fontWeight: "800",
-    marginBottom: 6,
-  },
-  subheading: {
-    color: colors.textMuted,
-    marginBottom: spacing.lg,
-    lineHeight: 20,
-  },
-  devNotice: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  devNoticeTitle: {
-    color: colors.text,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  devNoticeText: {
-    color: colors.textMuted,
-    lineHeight: 20,
-  },
-  label: {
-    color: colors.textSoft,
-    marginBottom: 6,
-    marginTop: 10,
-    fontWeight: "600",
+    marginBottom: spacing.md
   },
   input: {
     backgroundColor: colors.surface,
     color: colors.text,
-    padding: 12,
+    padding: spacing.md,
     borderRadius: radius.md,
+    minHeight: 120,
+    marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-  },
-  textArea: {
-    height: 140,
-    textAlignVertical: "top",
-  },
-  row: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  col: {
-    flex: 1,
-  },
-  actions: {
-    marginTop: spacing.xl,
-    gap: spacing.sm,
+    borderColor: colors.border
   },
   button: {
-    paddingVertical: 14,
-    borderRadius: radius.md,
-    alignItems: "center",
-  },
-  primaryButton: {
     backgroundColor: colors.primary,
-  },
-  secondaryButton: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.sm,
-  },
-  primaryButtonText: {
-    color: colors.text,
-    fontWeight: "800",
-  },
-  secondaryButtonText: {
-    color: colors.textSoft,
-    fontWeight: "800",
-  },
-  previewBox: {
-    marginTop: spacing.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
     padding: spacing.md,
-    gap: spacing.sm,
-  },
-  previewLabel: {
-    color: colors.textSoft,
-  },
-  previewImage: {
-    width: "100%",
-    height: 220,
     borderRadius: radius.md,
+    alignItems: "center"
   },
+  disabled: {
+    opacity: 0.6
+  },
+  buttonText: {
+    color: "white",
+    fontWeight: "700"
+  }
 });
