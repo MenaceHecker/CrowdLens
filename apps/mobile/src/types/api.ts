@@ -66,13 +66,6 @@ export interface FeedItem {
   latest_report_id: string | null;
 }
 
-export interface CreateReportRequest {
-  text: string;
-  location: LatLng;
-  occurred_at?: string | null;
-  media_url?: string | null;
-}
-
 export interface MediaUploadUrlRequest {
   filename: string;
   content_type: string;
@@ -83,6 +76,13 @@ export interface MediaUploadUrlResponse {
   upload_url: string;
   view_url: string;
   content_type: string;
+}
+
+export interface CreateReportRequest {
+  text: string;
+  location: LatLng;
+  occurred_at?: string | null;
+  media_url?: string | null;
 }
 
 export interface UserProfile {
