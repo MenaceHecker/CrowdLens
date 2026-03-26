@@ -24,6 +24,7 @@ from apps.api.src.abuse import (
 
 from packages.shared.models import (
     CreateReportRequest,
+    LatestReportPreview,
     Report,
     Job,
     NextJobRequest,
@@ -362,14 +363,37 @@ async def upsert_event_from_report_endpoint(req: UpsertFromReportRequest):
 
 @app.get("/feed", response_model=list[FeedItem])
 def get_feed():
-    events = [refresh_event_metrics(event) for event in event_repo.list_feed()]
-    items: list[FeedItem] = []
+    events = event_repo.list_ranked(limit=50)
+    feed_items: list[FeedItem] = []
 
     for event in events:
-        latest_report_id = event.report_ids[-1] if event.report_ids else None
-        items.append(FeedItem(event=event, latest_report_id=latest_report_id))
+        latest_report = None
 
-    return items
+        if event.report_ids:
+            latest_report_id = event.report_ids[-1]
+            latest_report = report_repo.get(latest_report_id)
+        else:
+            latest_report_id = None
+
+        latest_preview = None
+        if latest_report:
+            latest_preview = LatestReportPreview(
+                id=latest_report.id,
+                text=latest_report.text,
+                created_at=latest_report.created_at,
+                media_url=latest_report.media_url,
+                trust_score=latest_report.trust_score,
+            )
+
+        feed_items.append(
+            FeedItem(
+                event=event,
+                latest_report_id=latest_report_id,
+                latest_report_preview=latest_preview,
+            )
+        )
+
+    return feed_items
 
 
 @app.get("/events/{event_id}", response_model=Event)
