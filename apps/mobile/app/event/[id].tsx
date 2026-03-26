@@ -1,270 +1,247 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocalSearchParams, useFocusEffect } from "expo-router";
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
+import {
+  ActivityIndicator,
+  Image,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { getEvent, getEventReports } from "../../src/api/client";
-import { WS_BASE } from "../../src/api/config";
-import { Badge } from "../../src/components/Badge";
-import { SectionCard } from "../../src/components/SectionCard";
 import { colors, radius, spacing } from "../../src/styles/theme";
 import { Event, Report } from "../../src/types/api";
 
-const POLL_INTERVAL_MS = 8000;
-
-function statusTone(status: string) {
-  switch (status) {
-    case "active":
-      return "red";
-    case "cooling_down":
-      return "yellow";
-    case "resolved":
-      return "gray";
-    default:
-      return "blue";
-  }
+function formatTimestamp(value: string | null) {
+  if (!value) return "Unknown time";
+  const date = new Date(value);
+  return date.toLocaleString();
 }
 
-function trendTone(trend: string) {
-  switch (trend) {
-    case "growing":
-      return "purple";
-    case "stable":
-      return "teal";
-    default:
-      return "blue";
-  }
+function getSeverityLabel(severity: number) {
+  if (severity >= 5) return "critical";
+  if (severity >= 4) return "high";
+  if (severity >= 3) return "medium";
+  return "low";
 }
 
-function severityTone(severity: number) {
-  if (severity >= 5) return "red";
-  if (severity >= 4) return "yellow";
-  if (severity >= 3) return "blue";
-  return "gray";
+function getSeverityColor(severity: number) {
+  if (severity >= 5) return "#dc2626";
+  if (severity >= 4) return "#f97316";
+  if (severity >= 3) return "#2563eb";
+  return "#14b8a6";
+}
+
+function isVideoUrl(url: string) {
+  const lower = url.toLowerCase();
+  return (
+    lower.includes(".mp4") ||
+    lower.includes(".mov") ||
+    lower.includes(".m4v") ||
+    lower.includes(".webm") ||
+    lower.includes("video")
+  );
+}
+
+function EventBadge({ label }: { label: string }) {
+  return (
+    <View style={styles.badge}>
+      <Text style={styles.badgeText}>{label}</Text>
+    </View>
+  );
+}
+
+function ReportCard({ report }: { report: Report }) {
+  const hasMedia = !!report.media_url;
+  const isVideo = report.media_url ? isVideoUrl(report.media_url) : false;
+
+  return (
+    <View style={styles.reportCard}>
+      <View style={styles.reportHeader}>
+        <Text style={styles.reportTitle}>Report</Text>
+        <Text style={styles.reportTimestamp}>{formatTimestamp(report.created_at)}</Text>
+      </View>
+
+      {hasMedia && !isVideo ? (
+        <Image source={{ uri: report.media_url! }} style={styles.reportImage} />
+      ) : null}
+
+      {hasMedia && isVideo ? (
+        <View style={styles.videoBox}>
+          <Text style={styles.videoText}>Video attached</Text>
+        </View>
+      ) : null}
+
+      <Text style={styles.reportBody}>{report.text}</Text>
+
+      <View style={styles.reportMetaWrap}>
+        <Text style={styles.reportMeta}>trust_score: {report.trust_score}</Text>
+        <Text style={styles.reportMeta}>status: {report.status}</Text>
+        <Text style={styles.reportMeta}>user_id: {report.user_id}</Text>
+        {report.is_duplicate ? (
+          <Text style={styles.reportMeta}>
+            duplicate_of: {report.duplicate_of ?? "unknown"}
+          </Text>
+        ) : (
+          <Text style={styles.reportMeta}>unique report</Text>
+        )}
+      </View>
+    </View>
+  );
 }
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+
   const [event, setEvent] = useState<Event | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-
-  const loadEvent = async (silent = false) => {
+  const load = useCallback(async () => {
     if (!id) return;
 
-    try {
-      if (!silent) {
-        setError(null);
-      }
+    const [eventData, reportData] = await Promise.all([
+      getEvent(id),
+      getEventReports(id),
+    ]);
 
-      const [eventData, reportData] = await Promise.all([
-        getEvent(id),
-        getEventReports(id)
-      ]);
-
-      setEvent(eventData);
-      setReports(reportData);
-
-      if (!silent) {
-        setError(null);
-      }
-    } catch (err) {
-      if (!silent) {
-        setError(err instanceof Error ? err.message : "Failed to load event");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const connectWebSocket = useCallback(() => {
-    if (!id) return;
-
-    if (socketRef.current) {
-      socketRef.current.close();
-    }
-
-    const ws = new WebSocket(`${WS_BASE}/ws/events/${id}`);
-    socketRef.current = ws;
-
-    ws.onmessage = (incoming) => {
-      try {
-        const payload = JSON.parse(incoming.data);
-        if (payload.type === "event_updated" && payload.event_id === id) {
-          loadEvent(true);
-        }
-      } catch {
-        // ignore malformed messages
-      }
-    };
-
-    ws.onclose = () => {
-      socketRef.current = null;
-    };
+    setEvent(eventData);
+    setReports(reportData);
   }, [id]);
-
-  const disconnectWebSocket = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-    }
-  }, []);
-
-  const startPolling = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-
-    intervalRef.current = setInterval(() => {
-      loadEvent(true);
-    }, POLL_INTERVAL_MS);
-  }, [id]);
-
-  const stopPolling = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  }, []);
 
   useEffect(() => {
-    loadEvent();
-    startPolling();
-    connectWebSocket();
+    load()
+      .catch(() => null)
+      .finally(() => setLoading(false));
+  }, [load]);
 
-    return () => {
-      stopPolling();
-      disconnectWebSocket();
-    };
-  }, [id, startPolling, stopPolling, connectWebSocket, disconnectWebSocket]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadEvent(true);
-      startPolling();
-      connectWebSocket();
-
-      return () => {
-        stopPolling();
-        disconnectWebSocket();
-      };
-    }, [id, startPolling, stopPolling, connectWebSocket, disconnectWebSocket])
-  );
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
-        <Text style={styles.muted}>Loading event...</Text>
+        <Text style={styles.muted}>Loading event details...</Text>
       </View>
     );
   }
 
-  if (error || !event) {
+  if (!event) {
     return (
       <View style={styles.center}>
-        <Text style={styles.error}>{error ?? "Event not found"}</Text>
+        <Text style={styles.muted}>Event not found.</Text>
       </View>
     );
   }
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.pollingBox}>
-        <Text style={styles.pollingText}>Realtime enabled · polling fallback every 8 seconds</Text>
-      </View>
+  const primaryMediaReport =
+    reports.find((report) => report.media_url && !isVideoUrl(report.media_url)) ??
+    reports.find((report) => report.media_url) ??
+    null;
 
-      <View style={styles.hero}>
-        <Text style={styles.title}>{event.title}</Text>
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      <View style={styles.heroCard}>
+        <View style={styles.heroHeader}>
+          <View
+            style={[
+              styles.severityDot,
+              { backgroundColor: getSeverityColor(event.severity) },
+            ]}
+          />
+          <View style={styles.heroHeaderText}>
+            <Text style={styles.heroTitle}>{event.title}</Text>
+            <Text style={styles.heroSubtitle}>
+              {getSeverityLabel(event.severity)} · confidence {event.confidence} · rank {event.ranking_score}
+            </Text>
+          </View>
+        </View>
+
+        {primaryMediaReport?.media_url && !isVideoUrl(primaryMediaReport.media_url) ? (
+          <Image
+            source={{ uri: primaryMediaReport.media_url }}
+            style={styles.heroImage}
+          />
+        ) : null}
+
+        {primaryMediaReport?.media_url && isVideoUrl(primaryMediaReport.media_url) ? (
+          <View style={styles.videoBoxLarge}>
+            <Text style={styles.videoText}>Video attached to this event</Text>
+          </View>
+        ) : null}
+
+        <Text style={styles.summaryText}>
+          {event.briefing?.summary ?? "No event summary available yet."}
+        </Text>
 
         <View style={styles.badgeRow}>
-          <Badge label={event.status} tone={statusTone(event.status) as any} />
-          <Badge label={event.trend} tone={trendTone(event.trend) as any} />
-          <Badge label={`sev ${event.severity}`} tone={severityTone(event.severity) as any} />
+          <EventBadge label={event.status} />
+          <EventBadge label={event.trend} />
+          <EventBadge label={`severity ${event.severity}`} />
           {event.briefing?.incident_type ? (
-            <Badge label={event.briefing.incident_type} tone="purple" />
+            <EventBadge label={event.briefing.incident_type} />
+          ) : null}
+          {primaryMediaReport?.media_url ? (
+            <EventBadge
+              label={isVideoUrl(primaryMediaReport.media_url) ? "video" : "image"}
+            />
           ) : null}
         </View>
-
-        <Text style={styles.heroSummary}>
-          {event.briefing?.summary ?? "No summary available."}
-        </Text>
       </View>
 
-      <SectionCard title="Live Metrics">
-        <View style={styles.metricsGrid}>
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Severity</Text>
-            <Text style={styles.metricValue}>{event.severity}</Text>
+      <View style={styles.statsCard}>
+        <Text style={styles.sectionTitle}>Event stats</Text>
+        <View style={styles.statsGrid}>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{event.report_count}</Text>
+            <Text style={styles.statLabel}>reports</Text>
           </View>
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Confidence</Text>
-            <Text style={styles.metricValue}>{event.confidence}</Text>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{event.unique_report_count}</Text>
+            <Text style={styles.statLabel}>unique</Text>
           </View>
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Unique</Text>
-            <Text style={styles.metricValue}>{event.unique_report_count}</Text>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{event.duplicate_report_count}</Text>
+            <Text style={styles.statLabel}>duplicates</Text>
           </View>
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Duplicates</Text>
-            <Text style={styles.metricValue}>{event.duplicate_report_count}</Text>
-          </View>
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Velocity/hr</Text>
-            <Text style={styles.metricValue}>{event.report_velocity_per_hour}</Text>
-          </View>
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Last signal</Text>
-            <Text style={styles.metricValue}>{event.minutes_since_last_report}m</Text>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{event.minutes_since_last_report}</Text>
+            <Text style={styles.statLabel}>mins ago</Text>
           </View>
         </View>
-      </SectionCard>
+      </View>
 
-      <SectionCard title="Recommended Actions">
-        {(event.briefing?.recommended_actions ?? []).map((action) => (
-          <Text key={action} style={styles.body}>
-            • {action}
-          </Text>
-        ))}
-      </SectionCard>
-
-      <SectionCard title="Tags">
-        <View style={styles.badgeRow}>
-          {(event.briefing?.tags ?? []).map((tag) => (
-            <Badge key={tag} label={tag} tone="teal" />
+      {event.briefing?.recommended_actions?.length ? (
+        <View style={styles.actionsCard}>
+          <Text style={styles.sectionTitle}>Recommended actions</Text>
+          {event.briefing.recommended_actions.map((action, index) => (
+            <Text key={`${action}-${index}`} style={styles.actionItem}>
+              • {action}
+            </Text>
           ))}
         </View>
-      </SectionCard>
+      ) : null}
 
-      <SectionCard title="Source Reports">
+      <View style={styles.reportsSection}>
+        <Text style={styles.sectionTitle}>Reports</Text>
         {reports.map((report) => (
-          <View key={report.id} style={styles.reportItem}>
-            <Text style={styles.reportText}>{report.text}</Text>
-
-            {report.media_url ? (
-              <Image source={{ uri: report.media_url }} style={styles.reportImage} />
-            ) : null}
-
-            <View style={styles.badgeRow}>
-              <Badge
-                label={report.is_duplicate ? "duplicate" : "unique"}
-                tone={report.is_duplicate ? "yellow" : "green"}
-              />
-              {event.briefing?.incident_type ? (
-                <Badge label={event.briefing.incident_type} tone="purple" />
-              ) : null}
-            </View>
-
-            <Text style={styles.reportMeta}>trust_score: {report.trust_score}</Text>
-            {report.duplicate_of ? (
-              <Text style={styles.reportMeta}>duplicate_of: {report.duplicate_of}</Text>
-            ) : null}
-          </View>
+          <ReportCard key={report.id} report={report} />
         ))}
-      </SectionCard>
+      </View>
     </ScrollView>
   );
 }
@@ -272,108 +249,193 @@ export default function EventDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg
+    backgroundColor: colors.bg,
   },
   content: {
     padding: spacing.md,
+    paddingBottom: spacing.xl,
     gap: spacing.md,
-    paddingBottom: spacing.xl
   },
   center: {
     flex: 1,
     backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm
+    gap: spacing.sm,
   },
-  pollingBox: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md
-  },
-  pollingText: {
+  muted: {
     color: colors.textMuted,
-    fontSize: 12
   },
-  hero: {
+  heroCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.lg
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.md,
   },
-  title: {
+  heroHeader: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "flex-start",
+  },
+  severityDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    marginTop: 6,
+  },
+  heroHeaderText: {
+    flex: 1,
+  },
+  heroTitle: {
     color: colors.text,
     fontSize: 24,
     fontWeight: "800",
-    marginBottom: spacing.sm
   },
-  heroSummary: {
+  heroSubtitle: {
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  heroImage: {
+    width: "100%",
+    height: 240,
+    borderRadius: radius.md,
+  },
+  videoBoxLarge: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  summaryText: {
     color: colors.textSoft,
     lineHeight: 22,
-    marginTop: spacing.sm
+    fontSize: 16,
   },
   badgeRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.xs
+    gap: spacing.xs,
   },
-  metricsGrid: {
+  badge: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  badgeText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  statsCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm
+    gap: spacing.sm,
   },
-  metricBox: {
-    backgroundColor: colors.surfaceAlt,
+  statBox: {
+    flexGrow: 1,
+    minWidth: "45%",
+    backgroundColor: colors.bg,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    minWidth: 100
-  },
-  metricLabel: {
-    color: colors.textMuted,
-    fontSize: 12
-  },
-  metricValue: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-    marginTop: 2
-  },
-  body: {
-    color: colors.textSoft,
-    lineHeight: 20
-  },
-  reportItem: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
     padding: spacing.md,
-    gap: spacing.sm
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  reportText: {
+  statValue: {
     color: colors.text,
-    lineHeight: 20
+    fontSize: 22,
+    fontWeight: "800",
   },
-  reportMeta: {
+  statLabel: {
     color: colors.textMuted,
-    fontSize: 12
+    marginTop: 4,
+  },
+  actionsCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  actionItem: {
+    color: colors.textSoft,
+    lineHeight: 22,
+  },
+  reportsSection: {
+    gap: spacing.md,
+  },
+  reportCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  reportHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  reportTitle: {
+    color: colors.text,
+    fontWeight: "800",
+    fontSize: 16,
+  },
+  reportTimestamp: {
+    color: colors.textMuted,
+    fontSize: 12,
+    flexShrink: 1,
+    textAlign: "right",
   },
   reportImage: {
     width: "100%",
     height: 220,
-    borderRadius: radius.md
+    borderRadius: radius.md,
   },
-  muted: {
-    color: colors.textMuted
+  videoBox: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  error: {
-    color: "#f87171"
-  }
+  videoText: {
+    color: colors.textSoft,
+    fontWeight: "700",
+  },
+  reportBody: {
+    color: colors.textSoft,
+    lineHeight: 22,
+  },
+  reportMetaWrap: {
+    gap: 4,
+  },
+  reportMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
 });
