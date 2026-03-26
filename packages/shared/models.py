@@ -112,6 +112,15 @@ class Event(BaseModel):
     briefing: Optional[EventBriefing] = None
 
 
+class LatestReportPreview(BaseModel):
+    id: str
+    text: str
+    created_at: datetime
+    media_url: Optional[str] = None
+    trust_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class FeedItem(BaseModel):
     event: Event
     latest_report_id: Optional[str] = None
+    latest_report_preview: Optional[LatestReportPreview] = None
