@@ -61,9 +61,18 @@ export interface Event {
   briefing: EventBriefing | null;
 }
 
+export interface LatestReportPreview {
+  id: string;
+  text: string;
+  created_at: string;
+  media_url: string | null;
+  trust_score: number;
+}
+
 export interface FeedItem {
   event: Event;
   latest_report_id: string | null;
+  latest_report_preview: LatestReportPreview | null;
 }
 
 export interface MediaUploadUrlRequest {
