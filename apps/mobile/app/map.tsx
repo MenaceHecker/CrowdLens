@@ -1,176 +1,83 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useFocusEffect, router } from "expo-router";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View
-} from "react-native";
-import MapView, { Callout, Marker, Region } from "react-native-maps";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import MapView, { Callout, Marker } from "react-native-maps";
+import { router } from "expo-router";
 
-import { getFeed, processNextJob } from "../src/api/client";
-import { WS_BASE } from "../src/api/config";
+import { getFeed, getReport } from "../src/api/client";
 import { colors, radius, spacing } from "../src/styles/theme";
-import { FeedItem } from "../src/types/api";
+import { FeedItem, Report } from "../src/types/api";
 
-const POLL_INTERVAL_MS = 8000;
+type MarkerMediaMap = Record<string, Report | null>;
 
-function markerColor(status: string, severity: number) {
-  if (status === "resolved") return "#64748b";
-  if (status === "cooling_down") return "#f59e0b";
+function getSeverityColor(severity: number) {
   if (severity >= 5) return "#dc2626";
   if (severity >= 4) return "#f97316";
   if (severity >= 3) return "#2563eb";
   return "#14b8a6";
 }
 
-function buildRegion(items: FeedItem[]): Region {
-  if (items.length === 0) {
-    return {
-      latitude: 33.7756,
-      longitude: -84.3963,
-      latitudeDelta: 0.08,
-      longitudeDelta: 0.08
-    };
-  }
-
-  if (items.length === 1) {
-    return {
-      latitude: items[0].event.centroid.lat,
-      longitude: items[0].event.centroid.lng,
-      latitudeDelta: 0.03,
-      longitudeDelta: 0.03
-    };
-  }
-
-  const lats = items.map((item) => item.event.centroid.lat);
-  const lngs = items.map((item) => item.event.centroid.lng);
-
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-
-  return {
-    latitude: (minLat + maxLat) / 2,
-    longitude: (minLng + maxLng) / 2,
-    latitudeDelta: Math.max((maxLat - minLat) * 1.8, 0.03),
-    longitudeDelta: Math.max((maxLng - minLng) * 1.8, 0.03)
-  };
+function isVideoUrl(url: string) {
+  const lower = url.toLowerCase();
+  return (
+    lower.includes(".mp4") ||
+    lower.includes(".mov") ||
+    lower.includes(".m4v") ||
+    lower.includes(".webm") ||
+    lower.includes("video")
+  );
 }
 
 export default function MapScreen() {
   const [items, setItems] = useState<FeedItem[]>([]);
+  const [mediaByEventId, setMediaByEventId] = useState<MarkerMediaMap>({});
   const [loading, setLoading] = useState(true);
-  const [processingJob, setProcessingJob] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-
-  const loadFeed = async (silent = false) => {
-    try {
-      if (!silent) {
-        setError(null);
-      }
-      const data = await getFeed();
-      setItems(data);
-      if (!silent) {
-        setError(null);
-      }
-    } catch (err) {
-      if (!silent) {
-        setError(err instanceof Error ? err.message : "Failed to load map data");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const connectWebSocket = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.close();
-    }
-
-    const ws = new WebSocket(`${WS_BASE}/ws/feed`);
-    socketRef.current = ws;
-
-    ws.onmessage = (incoming) => {
-      try {
-        const payload = JSON.parse(incoming.data);
-        if (payload.type === "feed_updated") {
-          loadFeed(true);
-        }
-      } catch {
-        // ignore malformed messages
-      }
-    };
-
-    ws.onclose = () => {
-      socketRef.current = null;
-    };
-  }, []);
-
-  const disconnectWebSocket = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-    }
-  }, []);
-
-  const startPolling = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-
-    intervalRef.current = setInterval(() => {
-      loadFeed(true);
-    }, POLL_INTERVAL_MS);
-  }, []);
-
-  const stopPolling = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  }, []);
-
-  const handleProcessNext = async () => {
-    try {
-      setProcessingJob(true);
-      setError(null);
-      await processNextJob();
-      await loadFeed(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to process next job");
-    } finally {
-      setProcessingJob(false);
-    }
-  };
 
   useEffect(() => {
-    loadFeed();
-    startPolling();
-    connectWebSocket();
+    let mounted = true;
+
+    async function load() {
+      try {
+        const feed = await getFeed();
+        if (!mounted) return;
+
+        setItems(feed);
+
+        const pairs = await Promise.all(
+          feed.map(async (item) => {
+            const latestId = item.latest_report_id;
+            if (!latestId) return [item.event.id, null] as const;
+
+            try {
+              const report = await getReport(latestId);
+              return [item.event.id, report] as const;
+            } catch {
+              return [item.event.id, null] as const;
+            }
+          })
+        );
+
+        if (!mounted) return;
+        setMediaByEventId(Object.fromEntries(pairs));
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    load();
 
     return () => {
-      stopPolling();
-      disconnectWebSocket();
+      mounted = false;
     };
-  }, [startPolling, stopPolling, connectWebSocket, disconnectWebSocket]);
+  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadFeed(true);
-      startPolling();
-      connectWebSocket();
-
-      return () => {
-        stopPolling();
-        disconnectWebSocket();
-      };
-    }, [startPolling, stopPolling, connectWebSocket, disconnectWebSocket])
+  const initialRegion = useMemo(
+    () => ({
+      latitude: 33.7756,
+      longitude: -84.3963,
+      latitudeDelta: 0.03,
+      longitudeDelta: 0.03,
+    }),
+    []
   );
 
   if (loading) {
@@ -182,86 +89,74 @@ export default function MapScreen() {
     );
   }
 
-  const region = buildRegion(items);
-
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
-        <View style={styles.headerTextWrap}>
-          <Text style={styles.heading}>Live Incident Map</Text>
-          <Text style={styles.subheading}>
-            Realtime event pins with severity and incident type
-          </Text>
-        </View>
-
-        <View style={styles.actions}>
-          <Link href="/report" asChild>
-            <Pressable style={[styles.button, styles.primaryButton]}>
-              <Text style={styles.primaryButtonText}>+ Report</Text>
-            </Pressable>
-          </Link>
-
-          <Pressable
-            style={[styles.button, styles.secondaryButton]}
-            onPress={handleProcessNext}
-            disabled={processingJob}
-          >
-            <Text style={styles.secondaryButtonText}>
-              {processingJob ? "Processing..." : "Process Next Job"}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorTitle}>Couldn’t load the map</Text>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      ) : null}
-
-      <MapView style={styles.map} initialRegion={region} region={region}>
+      <MapView style={styles.map} initialRegion={initialRegion}>
         {items.map((item) => {
-          const event = item.event;
+          const { event } = item;
+          const latestReport = mediaByEventId[event.id];
+          const mediaUrl = latestReport?.media_url ?? null;
+          const hasVideo = mediaUrl ? isVideoUrl(mediaUrl) : false;
+
           return (
             <Marker
               key={event.id}
               coordinate={{
                 latitude: event.centroid.lat,
-                longitude: event.centroid.lng
+                longitude: event.centroid.lng,
               }}
-              pinColor={markerColor(event.status, event.severity)}
+              pinColor={getSeverityColor(event.severity)}
             >
-              <Callout onPress={() => router.push(`/event/${event.id}`)}>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutTitle}>{event.title}</Text>
-                  <Text style={styles.calloutText}>
-                    Status: {event.status} · Severity: {event.severity}
+              <Callout tooltip onPress={() => router.push(`/event/${event.id}`)}>
+                <View style={styles.calloutCard}>
+                  <View style={styles.calloutHeader}>
+                    <View
+                      style={[
+                        styles.severityDot,
+                        { backgroundColor: getSeverityColor(event.severity) },
+                      ]}
+                    />
+                    <View style={styles.calloutHeaderText}>
+                      <Text style={styles.calloutTitle}>{event.title}</Text>
+                      <Text style={styles.calloutSubtitle}>
+                        Severity {event.severity} · Confidence {event.confidence}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.calloutSummary} numberOfLines={4}>
+                    {event.briefing?.summary ?? "No summary available yet."}
                   </Text>
-                  <Text style={styles.calloutText}>
-                    Type: {event.briefing?.incident_type ?? "unknown"}
-                  </Text>
-                  <Text style={styles.calloutText}>
-                    Rank: {event.ranking_score} · Unique: {event.unique_report_count}
-                  </Text>
-                  <Text style={styles.calloutText}>
-                    Media: {event.briefing?.source_stats.has_media ? "yes" : "no"}
-                  </Text>
-                  <Text style={styles.calloutHint}>Tap for details</Text>
+
+                  <View style={styles.badgeRow}>
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{event.status}</Text>
+                    </View>
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{event.trend}</Text>
+                    </View>
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{event.report_count} reports</Text>
+                    </View>
+                    {mediaUrl ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{hasVideo ? "video" : "image"}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Pressable
+                    style={styles.openButton}
+                    onPress={() => router.push(`/event/${event.id}`)}
+                  >
+                    <Text style={styles.openButtonText}>Open event</Text>
+                  </Pressable>
                 </View>
               </Callout>
             </Marker>
           );
         })}
       </MapView>
-
-      <View style={styles.legend}>
-        <Text style={styles.legendTitle}>Legend</Text>
-        <Text style={styles.legendText}>Red: critical / active</Text>
-        <Text style={styles.legendText}>Orange: elevated severity</Text>
-        <Text style={styles.legendText}>Yellow: cooling down</Text>
-        <Text style={styles.legendText}>Gray: resolved</Text>
-      </View>
     </View>
   );
 }
@@ -269,118 +164,87 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg
+    backgroundColor: colors.bg,
+  },
+  map: {
+    flex: 1,
   },
   center: {
     flex: 1,
     backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm
+    gap: spacing.sm,
   },
   muted: {
-    color: colors.textMuted
-  },
-  topBar: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    gap: spacing.sm
-  },
-  headerTextWrap: {
-    gap: 4
-  },
-  heading: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: "800"
-  },
-  subheading: {
     color: colors.textMuted,
-    lineHeight: 18
   },
-  actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm
-  },
-  button: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: radius.md
-  },
-  primaryButton: {
-    backgroundColor: colors.primary
-  },
-  secondaryButton: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border
-  },
-  primaryButtonText: {
-    color: colors.text,
-    fontWeight: "700"
-  },
-  secondaryButtonText: {
-    color: colors.textSoft,
-    fontWeight: "700"
-  },
-  errorBox: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-    backgroundColor: "#2a0f14",
-    borderWidth: 1,
-    borderColor: "#7f1d1d",
-    borderRadius: radius.lg,
-    padding: spacing.md
-  },
-  errorTitle: {
-    color: "#fecaca",
-    fontWeight: "700",
-    marginBottom: 4
-  },
-  errorText: {
-    color: "#fca5a5"
-  },
-  map: {
-    flex: 1
-  },
-  callout: {
-    width: 230,
-    padding: 4
-  },
-  calloutTitle: {
-    fontWeight: "700",
-    marginBottom: 4
-  },
-  calloutText: {
-    fontSize: 12,
-    marginBottom: 2
-  },
-  calloutHint: {
-    marginTop: 6,
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.primary
-  },
-  legend: {
-    position: "absolute",
-    bottom: spacing.lg,
-    left: spacing.md,
+  calloutCard: {
+    width: 280,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
     padding: spacing.md,
-    gap: 4
+    gap: spacing.sm,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
-  legendTitle: {
+  calloutHeader: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "flex-start",
+  },
+  severityDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 999,
+    marginTop: 5,
+  },
+  calloutHeaderText: {
+    flex: 1,
+  },
+  calloutTitle: {
     color: colors.text,
-    fontWeight: "700",
-    marginBottom: 2
+    fontWeight: "800",
+    fontSize: 16,
   },
-  legendText: {
+  calloutSubtitle: {
     color: colors.textMuted,
-    fontSize: 12
-  }
+    marginTop: 4,
+    fontSize: 12,
+  },
+  calloutSummary: {
+    color: colors.textSoft,
+    lineHeight: 20,
+  },
+  badgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
+  badge: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  badgeText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  openButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  openButtonText: {
+    color: "#fff",
+    fontWeight: "800",
+  },
 });
