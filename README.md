@@ -1,40 +1,88 @@
-# CrowdLens
+CrowdLens - Real-time Incident Intelligence Platform
 
-CrowdLens is a real-time incident intelligence platform that turns crowd reports into structured, ranked, map-visible events.
+CrowdLens is a real-time, crowd-powered incident reporting platform that
+aggregates signals from users, detects emerging events, and surfaces
+high-priority situations with AI-assisted summaries.
 
-## Stack
+What it does
 
-- React Native / Expo mobile app
-- FastAPI API + worker
-- Firestore persistence
-- Cloud Tasks async processing
-- Cloud Run deployment
-- Cloud Storage signed media uploads
-- Gemini-powered structured briefings
-- WebSocket-based realtime updates
+-   Users submit reports with text and media
+-   Reports are clustered into incidents based on location and
+    similarity
+-   Incidents are ranked using severity, confidence, freshness, and
+    report velocity
+-   AI generates summaries and recommended actions
+-   Feed updates in real time via WebSockets
+-   Map view shows incident hotspots with contextual callouts
 
-## Features
+Architecture Overview
 
-- submit incident reports with optional media
-- direct media upload to Cloud Storage with signed URLs
-- async worker processing with Cloud Tasks
-- event clustering and deduplication
-- ranking, lifecycle decay, and map view
-- AI-generated briefings with incident type, tags, and actions
+Mobile App (Expo / React Native) | Cloud Run API (FastAPI) | Firestore
+(events and reports) | Cloud Storage (media) | Cloud Tasks (async
+processing) | Worker Service (AI and aggregation) | Gemini API
+(summaries and actions)
 
-## Architecture
+Tech Stack
 
-Mobile App → FastAPI API → Firestore + Cloud Tasks → Worker → Firestore → WebSocket updates → Mobile App
+Frontend (Mobile) - React Native (Expo) - TypeScript - Expo Router -
+WebSockets
 
-## Local Development
+Backend - FastAPI (Python) - Firestore - Cloud Storage - Cloud Tasks -
+Cloud Run
 
-Run API:
-make dev-api
+AI Layer - Gemini
 
-Run Worker:
-make dev-worker
+Pipeline
 
-Run Mobile App:
-From apps/mobile directory run :
-npm run start
-Choose an emulator or open on expo app on your phone
+1.  User submits a report with optional media
+2.  App requests a signed upload URL
+3.  Media uploads directly to Cloud Storage
+4.  Report is stored in Firestore
+5.  Cloud Task is triggered
+6.  Worker processes the report, updates events, recalculates ranking,
+    and generates AI summary
+7.  Feed updates in real time
+
+Features
+
+Live Incident Feed - Ranked feed - Media thumbnails - Real-time updates
+
+Event Detail View - AI summary - Recommended actions - Media-rich
+reports
+
+Map View - Severity-based markers - Contextual callouts - Navigation to
+event detail
+
+Media Pipeline - Direct upload using signed URLs - Image and video
+support
+
+Why this project stands out
+
+Most systems treat reports independently. CrowdLens aggregates signals
+into evolving incidents, ranks importance, and adds AI-generated context
+in real time.
+
+Running locally
+
+Mobile: cd apps/mobile npm install npm run start
+
+API: cd apps/api pip install -r requirements.txt uvicorn main:app
+–reload
+
+Worker: cd apps/worker python main.py
+
+Deployment
+
+-   API on Cloud Run
+-   Worker on Cloud Run
+-   Storage on Google Cloud Storage
+-   Database on Firestore
+-   Authentication via Firebase Auth
+
+Future improvements
+
+-   improved clustering using machine learning
+-   user trust scoring
+-   anomaly detection
+-   push notifications
+-   map heatmaps
