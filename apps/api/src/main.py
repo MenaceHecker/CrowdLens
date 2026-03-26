@@ -367,13 +367,8 @@ def get_feed():
     feed_items: list[FeedItem] = []
 
     for event in events:
-        latest_report = None
-
-        if event.report_ids:
-            latest_report_id = event.report_ids[-1]
-            latest_report = report_repo.get(latest_report_id)
-        else:
-            latest_report_id = None
+        latest_report_id = event.report_ids[-1] if event.report_ids else None
+        latest_report = report_repo.get(latest_report_id) if latest_report_id else None
 
         latest_preview = None
         if latest_report:
@@ -381,8 +376,8 @@ def get_feed():
                 id=latest_report.id,
                 text=latest_report.text,
                 created_at=latest_report.created_at,
-                media_url=latest_report.media_url,
-                trust_score=latest_report.trust_score,
+                media_url=getattr(latest_report, "media_url", None),
+                trust_score=float(getattr(latest_report, "trust_score", 0.0) or 0.0),
             )
 
         feed_items.append(
