@@ -1,9 +1,7 @@
-import { useEffect, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
-import { getReport } from "../api/client";
-import { FeedItem, Report } from "../types/api";
+import { FeedItem } from "../types/api";
 import { colors, radius, spacing } from "../styles/theme";
 
 function getSeverityLabel(severity: number) {
@@ -36,33 +34,9 @@ type Props = {
 };
 
 export function EventCard({ item }: Props) {
-  const { event, latest_report_id } = item;
-  const [latestReport, setLatestReport] = useState<Report | null>(null);
+  const { event, latest_report_preview } = item;
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadLatestReport() {
-      if (!latest_report_id) return;
-
-      try {
-        const report = await getReport(latest_report_id);
-        if (isMounted) {
-          setLatestReport(report);
-        }
-      } catch {
-        // ignore latest report fetch failures
-      }
-    }
-
-    loadLatestReport();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [latest_report_id]);
-
-  const mediaUrl = latestReport?.media_url ?? null;
+  const mediaUrl = latest_report_preview?.media_url ?? null;
   const hasVideo = mediaUrl ? isVideoUrl(mediaUrl) : false;
 
   return (
@@ -91,7 +65,7 @@ export function EventCard({ item }: Props) {
       ) : null}
 
       <Text style={styles.summary}>
-        {event.briefing?.summary ?? "No summary available yet."}
+        {event.briefing?.summary ?? latest_report_preview?.text ?? "No summary available yet."}
       </Text>
 
       <View style={styles.badgeRow}>
@@ -112,6 +86,12 @@ export function EventCard({ item }: Props) {
         {mediaUrl ? (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{hasVideo ? "video" : "image"}</Text>
+          </View>
+        ) : null}
+
+        {latest_report_preview ? (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>trust {latest_report_preview.trust_score}</Text>
           </View>
         ) : null}
       </View>
