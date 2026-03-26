@@ -3,11 +3,9 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import MapView, { Callout, Marker } from "react-native-maps";
 import { router } from "expo-router";
 
-import { getFeed, getReport } from "../src/api/client";
+import { getFeed } from "../src/api/client";
 import { colors, radius, spacing } from "../src/styles/theme";
-import { FeedItem, Report } from "../src/types/api";
-
-type MarkerMediaMap = Record<string, Report | null>;
+import { FeedItem } from "../src/types/api";
 
 function getSeverityColor(severity: number) {
   if (severity >= 5) return "#dc2626";
@@ -29,35 +27,14 @@ function isVideoUrl(url: string) {
 
 export default function MapScreen() {
   const [items, setItems] = useState<FeedItem[]>([]);
-  const [mediaByEventId, setMediaByEventId] = useState<MarkerMediaMap>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
-
+    let mounted = true
     async function load() {
       try {
         const feed = await getFeed();
-        if (!mounted) return;
-
-        setItems(feed);
-
-        const pairs = await Promise.all(
-          feed.map(async (item) => {
-            const latestId = item.latest_report_id;
-            if (!latestId) return [item.event.id, null] as const;
-
-            try {
-              const report = await getReport(latestId);
-              return [item.event.id, report] as const;
-            } catch {
-              return [item.event.id, null] as const;
-            }
-          })
-        );
-
-        if (!mounted) return;
-        setMediaByEventId(Object.fromEntries(pairs));
+        if (mounted) setItems(feed);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -93,9 +70,8 @@ export default function MapScreen() {
     <View style={styles.container}>
       <MapView style={styles.map} initialRegion={initialRegion}>
         {items.map((item) => {
-          const { event } = item;
-          const latestReport = mediaByEventId[event.id];
-          const mediaUrl = latestReport?.media_url ?? null;
+          const { event, latest_report_preview } = item;
+          const mediaUrl = latest_report_preview?.media_url ?? null;
           const hasVideo = mediaUrl ? isVideoUrl(mediaUrl) : false;
 
           return (
@@ -125,7 +101,7 @@ export default function MapScreen() {
                   </View>
 
                   <Text style={styles.calloutSummary} numberOfLines={4}>
-                    {event.briefing?.summary ?? "No summary available yet."}
+                    {event.briefing?.summary ?? latest_report_preview?.text ?? "No summary available yet."}
                   </Text>
 
                   <View style={styles.badgeRow}>
