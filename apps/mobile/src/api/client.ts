@@ -65,3 +65,7 @@ export async function processNextJob(): Promise<{ ok: boolean; ran: boolean; rea
 export async function getMe(): Promise<MeResponse> {
   return apiFetch<MeResponse>("/me");
 }
+
+export async function getReport(reportId: string): Promise<Report> {
+  return apiFetch<Report>(`/reports/${reportId}`);
+}
