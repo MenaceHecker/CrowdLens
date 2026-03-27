@@ -87,11 +87,19 @@ export function EventCard({ item }: Props) {
           <Text style={styles.badgeText}>{event.trend}</Text>
         </View>
 
-        {event.briefing?.incident_type ? (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{event.briefing.incident_type}</Text>
-          </View>
-        ) : null}
+        {event.briefing?.severity && (
+  <View style={[
+    styles.badge,
+    event.briefing.severity === "critical" && { backgroundColor: "#cf1322" },
+    event.briefing.severity === "high" && { backgroundColor: "#fa541c" },
+    event.briefing.severity === "medium" && { backgroundColor: "#faad14" },
+    event.briefing.severity === "low" && { backgroundColor: "#52c41a" },
+  ]}>
+    <Text style={styles.badgeText}>
+      {event.briefing.severity.toUpperCase()}
+    </Text>
+  </View>
+)}
 
         {mediaUrl ? (
           <View style={styles.badge}>
