@@ -110,6 +110,8 @@ class Event(BaseModel):
     severity: int = Field(default=1, ge=1, le=5)
     title: str = "Situation forming"
     briefing: Optional[EventBriefing] = None
+    is_active: bool = False
+    urgency_level: str = "stale"
 
 
 class LatestReportPreview(BaseModel):
