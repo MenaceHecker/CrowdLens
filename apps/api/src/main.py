@@ -363,7 +363,8 @@ async def upsert_event_from_report_endpoint(req: UpsertFromReportRequest):
 
 @app.get("/feed", response_model=list[FeedItem])
 def get_feed():
-    events = event_repo.list_ranked(limit=50)
+    events = event_repo.list_feed()[:50]
+
     feed_items: list[FeedItem] = []
 
     for event in events:
