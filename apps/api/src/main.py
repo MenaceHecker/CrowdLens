@@ -380,6 +380,15 @@ def get_feed():
                 media_url=getattr(latest_report, "media_url", None),
                 trust_score=float(getattr(latest_report, "trust_score", 0.0) or 0.0),
             )
+    # compute urgency
+        event.is_active = event.minutes_since_last_report < 60
+
+        if event.minutes_since_last_report < 10:
+            event.urgency_level = "breaking"
+        elif event.minutes_since_last_report < 60:
+            event.urgency_level = "active"
+        else:
+            event.urgency_level = "stale"           
 
         feed_items.append(
             FeedItem(
