@@ -1,5 +1,6 @@
 export type EventStatus = "forming" | "active" | "cooling_down" | "resolved";
 export type EventTrend = "new" | "growing" | "stable";
+export type EventUrgencyLevel = "breaking" | "active" | "stale";
 
 export interface LatLng {
   lat: number;
@@ -59,6 +60,8 @@ export interface Event {
   severity: number;
   title: string;
   briefing: EventBriefing | null;
+  is_active: boolean;
+  urgency_level: EventUrgencyLevel;
 }
 
 export interface LatestReportPreview {

@@ -1,7 +1,7 @@
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
-import { FeedItem } from "../types/api";
+import { EventUrgencyLevel, FeedItem } from "../types/api";
 import { colors, radius, spacing } from "../styles/theme";
 
 function getSeverityLabel(severity: number) {
@@ -16,6 +16,12 @@ function getSeverityColor(severity: number) {
   if (severity >= 4) return "#f97316";
   if (severity >= 3) return "#2563eb";
   return "#14b8a6";
+}
+
+function getUrgencyColor(urgencyLevel: EventUrgencyLevel) {
+  if (urgencyLevel === "breaking") return "#ff4d4f";
+  if (urgencyLevel === "active") return "#faad14";
+  return "#8c8c8c";
 }
 
 function isVideoUrl(url: string) {
@@ -63,6 +69,10 @@ export function EventCard({ item }: Props) {
           <Text style={styles.videoBadge}>Video attached</Text>
         </View>
       ) : null}
+
+      <View style={[styles.badge, { backgroundColor: getUrgencyColor(event.urgency_level) }]}>
+        <Text style={styles.badgeText}>{event.urgency_level.toUpperCase()}</Text>
+      </View>
 
       <Text style={styles.summary}>
         {event.briefing?.summary ?? latest_report_preview?.text ?? "No summary available yet."}
