@@ -112,6 +112,8 @@ class Event(BaseModel):
     briefing: Optional[EventBriefing] = None
     is_active: bool = False
     urgency_level: str = "stale"
+    surge_status: str = "stable"
+    surge_score: float = 0.0
 
 
 class LatestReportPreview(BaseModel):
