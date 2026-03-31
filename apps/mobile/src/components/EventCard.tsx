@@ -87,32 +87,21 @@ export function EventCard({ item }: Props) {
           <Text style={styles.badgeText}>{event.trend}</Text>
         </View>
 
-        {event.surge_status ? (
-          <View
-            style={[
-              styles.badge,
-              event.surge_status === "surging" && { backgroundColor: "#fa541c" },
-              event.surge_status === "stable" && { backgroundColor: "#1677ff" },
-              event.surge_status === "cooling" && { backgroundColor: "#8c8c8c" },
-            ]}
-          >
-            <Text style={styles.badgeText}>{event.surge_status.toUpperCase()}</Text>
-          </View>
-        ) : null}
-
         {event.briefing?.severity && (
-          <View
-            style={[
-              styles.badge,
-              event.briefing.severity === "critical" && { backgroundColor: "#cf1322" },
-              event.briefing.severity === "high" && { backgroundColor: "#fa541c" },
-              event.briefing.severity === "medium" && { backgroundColor: "#faad14" },
-              event.briefing.severity === "low" && { backgroundColor: "#52c41a" },
-            ]}
-          >
-            <Text style={styles.badgeText}>{event.briefing.severity.toUpperCase()}</Text>
-          </View>
-        )}
+  <View style={[
+    styles.badge,
+    event.briefing.severity === "critical" && { backgroundColor: "#cf1322" },
+    event.briefing.severity === "high" && { backgroundColor: "#fa541c" },
+    event.briefing.severity === "medium" && { backgroundColor: "#faad14" },
+    event.briefing.severity === "low" && { backgroundColor: "#52c41a" },
+  ]}>
+    <Text style={styles.badgeText}>
+      {event.briefing.severity.toUpperCase()}
+    </Text>
+  </View>
+
+  
+)}
 
         {mediaUrl ? (
           <View style={styles.badge}>
