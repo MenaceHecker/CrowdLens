@@ -62,6 +62,8 @@ export interface Event {
   briefing: EventBriefing | null;
   is_active: boolean;
   urgency_level: EventUrgencyLevel;
+  surge_status: string;
+  surge_score: number;
 }
 
 export interface LatestReportPreview {
