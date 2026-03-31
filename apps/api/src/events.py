@@ -216,6 +216,8 @@ def upsert_event_from_report(
             severity=1,
             title="Situation forming",
             briefing=None,
+            surge_status="stable",
+            surge_score=0.0,
         )
         refresh_event_metrics(event, now)
         return event, True
