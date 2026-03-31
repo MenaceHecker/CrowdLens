@@ -87,6 +87,19 @@ export function EventCard({ item }: Props) {
           <Text style={styles.badgeText}>{event.trend}</Text>
         </View>
 
+        {event.surge_status ? (
+          <View
+            style={[
+              styles.badge,
+              event.surge_status === "surging" && { backgroundColor: "#fa541c" },
+              event.surge_status === "stable" && { backgroundColor: "#1677ff" },
+              event.surge_status === "cooling" && { backgroundColor: "#8c8c8c" },
+            ]}
+          >
+            <Text style={styles.badgeText}>{event.surge_status.toUpperCase()}</Text>
+          </View>
+        ) : null}
+
         {event.briefing?.severity && (
   <View style={[
     styles.badge,
