@@ -30,6 +30,26 @@ def _derive_trend(unique_report_count: int) -> str:
         return "growing"
     return "stable"
 
+def _derive_surge_status(
+    unique_report_count: int,
+    minutes_since_last_report: int,
+    report_velocity_per_hour: float,
+    has_media: bool,
+) -> tuple[str, float]:
+    score = (
+        report_velocity_per_hour * 0.6 +
+        unique_report_count * 0.5 +
+        (2.0 if has_media else 0.0)
+    )
+
+    if minutes_since_last_report > 180:
+        return "cooling", round(score, 2)
+
+    if score >= 8:
+        return "surging", round(score, 2)
+
+    return "stable", round(score, 2)
+
 
 def _minutes_since(dt: datetime, now: datetime) -> int:
     delta = now - dt
