@@ -112,6 +112,9 @@ export default function MapScreen() {
                       <Text style={styles.badgeText}>{event.trend}</Text>
                     </View>
                     <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{event.surge_status}</Text>
+                    </View>
+                    <View style={styles.badge}>
                       <Text style={styles.badgeText}>{event.report_count} reports</Text>
                     </View>
                     {mediaUrl ? (
