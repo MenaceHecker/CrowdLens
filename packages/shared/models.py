@@ -82,6 +82,11 @@ class JobResultRequest(BaseModel):
     output: Optional[Dict[str, Any]] = None
 
 
+class AlertItem(BaseModel):
+    event: Event
+    reason: str
+
+
 class Event(BaseModel):
     id: str
     status: EventStatus
