@@ -16,6 +16,8 @@ from apps.api.src.repositories.users import FirestoreUserRepository
 from apps.api.src.reputation import apply_low_quality_rejection, apply_report_submission
 from apps.api.src.trust import compute_report_trust_score
 
+from packages.shared.models import AlertItem
+
 from apps.api.src.abuse import (
     enforce_duplicate_submission_rule,
     enforce_report_text_quality,
@@ -237,6 +239,38 @@ def get_report(report_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="report_not_found")
     return report
+
+@app.get("/alerts", response_model=list[AlertItem])
+def get_alerts():
+    events = event_repo.list_feed()[:50]
+    alerts: list[AlertItem] = []
+
+    for event in events:
+        reasons: list[str] = []
+
+        if event.urgency_level == "breaking":
+            reasons.append("breaking activity")
+
+        if getattr(event, "surge_status", "stable") == "surging":
+            reasons.append("surging reports")
+
+        briefing_severity = None
+        if event.briefing and getattr(event.briefing, "severity", None):
+            briefing_severity = str(event.briefing.severity).lower()
+
+        if briefing_severity in {"high", "critical"}:
+            reasons.append(f"{briefing_severity} severity")
+
+        if reasons:
+            alerts.append(
+                AlertItem(
+                    event=event,
+                    reason=", ".join(reasons),
+                )
+            )
+
+    alerts.sort(key=lambda item: item.event.ranking_score, reverse=True)
+    return alerts[:20]
 
 @app.get("/me")
 def get_me(auth_user: dict = Depends(verify_bearer_token)):
