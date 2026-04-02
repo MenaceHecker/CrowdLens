@@ -115,7 +115,7 @@ export default function MapScreen() {
                       <Text style={styles.badgeText}>{event.surge_status}</Text>
                     </View>
                     <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{event.report_count} reports</Text>
+                      <Text style={styles.badgeText}>{event.report_count} Reports</Text>
                     </View>
                     {mediaUrl ? (
                       <View style={styles.badge}>
