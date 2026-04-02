@@ -116,3 +116,8 @@ export interface MeResponse {
   email: string | null;
   profile: UserProfile;
 }
+
+export interface AlertItem {
+  event: Event;
+  reason: string;
+}
