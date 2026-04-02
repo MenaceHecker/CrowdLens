@@ -8,7 +8,7 @@ import {
   Report,
 } from "../types/api";
 import { getIdToken } from "../auth";
-import { MeResponse } from "../types/api";
+import { MeResponse, AlertItem } from "../types/api";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getIdToken();
@@ -68,4 +68,8 @@ export async function getMe(): Promise<MeResponse> {
 
 export async function getReport(reportId: string): Promise<Report> {
   return apiFetch<Report>(`/reports/${reportId}`);
+}
+
+export async function getAlerts(): Promise<AlertItem[]> {
+  return apiFetch<AlertItem[]>("/alerts");
 }
