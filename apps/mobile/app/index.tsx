@@ -227,6 +227,22 @@ export default function FeedScreen() {
         </View>
       ) : null}
 
+      {alerts.length > 0 ? (
+        <View style={styles.alertsSection}>
+          <Text style={styles.sectionTitle}>Alerts</Text>
+          {alerts.slice(0, 3).map((alert) => (
+            <Pressable
+              key={alert.event.id}
+              style={styles.alertCard}
+              onPress={() => router.push(`/event/${alert.event.id}`)}
+            >
+              <Text style={styles.alertTitle}>{alert.event.title}</Text>
+              <Text style={styles.alertReason}>{alert.reason}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
       <FlatList
         data={items}
         keyExtractor={(item) => item.event.id}
@@ -238,23 +254,6 @@ export default function FeedScreen() {
               loadFeed();
             }}
           />
-        }
-        ListHeaderComponent={
-          alerts.length > 0 ? (
-            <View style={styles.alertsSection}>
-              <Text style={styles.sectionTitle}>Alerts</Text>
-              {alerts.slice(0, 3).map((alert) => (
-                <Pressable
-                  key={alert.event.id}
-                  style={styles.alertCard}
-                  onPress={() => router.push(`/event/${alert.event.id}`)}
-                >
-                  <Text style={styles.alertTitle}>{alert.event.title}</Text>
-                  <Text style={styles.alertReason}>{alert.reason}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null
         }
         ListEmptyComponent={
           <View style={styles.emptyBox}>
