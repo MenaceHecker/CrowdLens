@@ -82,11 +82,6 @@ class JobResultRequest(BaseModel):
     output: Optional[Dict[str, Any]] = None
 
 
-class AlertItem(BaseModel):
-    event: Event
-    reason: str
-
-
 class Event(BaseModel):
     id: str
     status: EventStatus
@@ -133,3 +128,7 @@ class FeedItem(BaseModel):
     event: Event
     latest_report_id: Optional[str] = None
     latest_report_preview: Optional[LatestReportPreview] = None
+
+class AlertItem(BaseModel):
+    event: Event
+    reason: str
