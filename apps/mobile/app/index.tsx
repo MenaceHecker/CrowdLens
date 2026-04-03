@@ -10,13 +10,13 @@ import {
   View
 } from "react-native";
 
-import { getFeed, getMe } from "../src/api/client";
+import { getFeed, getMe, getAlerts } from "../src/api/client";
 import { WS_BASE } from "../src/api/config";
 import { logout } from "../src/auth";
 import { useAuthUser } from "../src/useAuthUser";
 import { EventCard } from "../src/components/EventCard";
 import { colors, radius, spacing } from "../src/styles/theme";
-import { FeedItem, UserProfile } from "../src/types/api";
+import { FeedItem, UserProfile, AlertItem } from "../src/types/api";
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -33,14 +33,21 @@ export default function FeedScreen() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+
   const loadFeed = async (silent = false) => {
     try {
       if (!silent) {
         setError(null);
       }
 
-      const data = await getFeed();
-      setItems(data);
+      const [feed, alertItems] = await Promise.all([
+      getFeed(),
+      getAlerts(),
+      ]);
+
+    setItems(feed);
+    setAlerts(alertItems);
 
       if (!silent) {
         setError(null);
@@ -242,6 +249,23 @@ export default function FeedScreen() {
             }}
           />
         }
+        ListHeaderComponent={
+          alerts.length > 0 ? (
+            <View style={styles.alertsSection}>
+              <Text style={styles.sectionTitle}>Alerts</Text>
+              {alerts.slice(0, 3).map((alert) => (
+                <Pressable
+                  key={alert.event.id}
+                  style={styles.alertCard}
+                  onPress={() => router.push(`/event/${alert.event.id}`)}
+                >
+                  <Text style={styles.alertTitle}>{alert.event.title}</Text>
+                  <Text style={styles.alertReason}>{alert.reason}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>No incidents yet</Text>
@@ -267,9 +291,34 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: spacing.xl
   },
+  alertsSection: {
+    marginBottom: spacing.md,
+    gap: spacing.sm
+  },
   topBar: {
     marginBottom: spacing.md,
     gap: spacing.sm
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800"
+  },
+  alertCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 4
+  },
+  alertTitle: {
+    color: colors.text,
+    fontWeight: "700"
+  },
+  alertReason: {
+    color: colors.textMuted,
+    lineHeight: 18
   },
   heading: {
     color: colors.text,
