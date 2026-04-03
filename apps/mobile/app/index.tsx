@@ -281,33 +281,33 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl
   },
   alertsSection: {
-    marginBottom: spacing.md,
-    gap: spacing.sm
+    marginBottom: 16,
+    gap: 8
   },
   topBar: {
     marginBottom: spacing.md,
     gap: spacing.sm
   },
   sectionTitle: {
-    color: colors.text,
     fontSize: 18,
-    fontWeight: "800"
+    fontWeight: "800",
+    color: colors.text
   },
   alertCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    backgroundColor: "#fff1f0",
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: 4
+    borderColor: "#ffa39e",
+    borderRadius: radius.lg,
+    padding: spacing.md
   },
   alertTitle: {
-    color: colors.text,
-    fontWeight: "700"
+    color: "#cf1322",
+    fontWeight: "800",
+    fontSize: 15
   },
   alertReason: {
-    color: colors.textMuted,
-    lineHeight: 18
+    color: "#8c1d18",
+    marginTop: 4
   },
   heading: {
     color: colors.text,
