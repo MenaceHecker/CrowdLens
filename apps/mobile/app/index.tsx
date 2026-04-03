@@ -41,13 +41,15 @@ export default function FeedScreen() {
         setError(null);
       }
 
-      const [feed, alertItems] = await Promise.all([
-      getFeed(),
-      getAlerts(),
+      const [feed, meData, alertItems] = await Promise.all([
+        getFeed(),
+        getMe(),
+        getAlerts(),
       ]);
 
-    setItems(feed);
-    setAlerts(alertItems);
+      setItems(feed);
+      setProfile(meData.profile);
+      setAlerts(alertItems);
 
       if (!silent) {
         setError(null);
@@ -59,15 +61,6 @@ export default function FeedScreen() {
     } finally {
       setLoading(false);
       setRefreshing(false);
-    }
-  };
-
-  const loadProfile = async () => {
-    try {
-      const me = await getMe();
-      setProfile(me.profile);
-    } catch {
-      // ignore profile fetch failures for now
     }
   };
 
@@ -139,7 +132,6 @@ export default function FeedScreen() {
     }
 
     loadFeed();
-    loadProfile();
     startPolling();
     connectWebSocket();
 
@@ -154,7 +146,6 @@ export default function FeedScreen() {
       if (!user) return;
 
       loadFeed(true);
-      loadProfile();
       startPolling();
       connectWebSocket();
 
@@ -245,7 +236,6 @@ export default function FeedScreen() {
             onRefresh={() => {
               setRefreshing(true);
               loadFeed();
-              loadProfile();
             }}
           />
         }
