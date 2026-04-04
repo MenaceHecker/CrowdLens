@@ -1,7 +1,20 @@
+import { useEffect } from "react";
+import * as SplashScreen from "expo-splash-screen";
 import { Stack } from "expo-router";
 import { colors } from "../src/styles/theme";
 
+SplashScreen.preventAutoHideAsync();
+
 export default function RootLayout() {
+  useEffect(() => {
+    const prepare = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      await SplashScreen.hideAsync();
+    };
+
+    prepare();
+  }, []);
+
   return (
     <Stack
       screenOptions={{
