@@ -2,7 +2,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
 import { EventUrgencyLevel, FeedItem } from "../types/api";
-import { colors, radius, spacing } from "../styles/theme";
+import { colors, radius, spacing, shadows } from "../styles/theme";
 
 function getSeverityLabel(severity: number) {
   if (severity >= 5) return "critical";
@@ -12,16 +12,31 @@ function getSeverityLabel(severity: number) {
 }
 
 function getSeverityColor(severity: number) {
-  if (severity >= 5) return "#dc2626";
+  if (severity >= 5) return "#ef4444";
   if (severity >= 4) return "#f97316";
-  if (severity >= 3) return "#2563eb";
+  if (severity >= 3) return "#3b82f6";
   return "#14b8a6";
 }
 
 function getUrgencyColor(urgencyLevel: EventUrgencyLevel) {
-  if (urgencyLevel === "breaking") return "#ff4d4f";
-  if (urgencyLevel === "active") return "#faad14";
-  return "#8c8c8c";
+  if (urgencyLevel === "breaking") return "#ef4444";
+  if (urgencyLevel === "active") return "#f59e0b";
+  return "#64748b";
+}
+
+function getSurgeColor(surgeStatus?: string) {
+  if (surgeStatus === "surging") return "#f97316";
+  if (surgeStatus === "stable") return "#2563eb";
+  if (surgeStatus === "cooling") return "#64748b";
+  return colors.badgeNeutral;
+}
+
+function getBriefingSeverityColor(severity?: string) {
+  if (severity === "critical") return "#b91c1c";
+  if (severity === "high") return "#ea580c";
+  if (severity === "medium" || severity === "moderate") return "#ca8a04";
+  if (severity === "low") return "#16a34a";
+  return colors.badgeNeutral;
 }
 
 function isVideoUrl(url: string) {
@@ -47,17 +62,42 @@ export function EventCard({ item }: Props) {
 
   return (
     <Pressable
-      style={styles.card}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={() => router.push(`/event/${event.id}`)}
     >
       <View style={styles.headerRow}>
         <View style={[styles.severityDot, { backgroundColor: getSeverityColor(event.severity) }]} />
+
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>{event.title}</Text>
           <Text style={styles.subtitle}>
             {getSeverityLabel(event.severity)} · confidence {event.confidence} · {event.report_count} reports
           </Text>
         </View>
+      </View>
+
+      <View style={styles.priorityRow}>
+        <View style={[styles.badge, styles.badgeSolid, { backgroundColor: getUrgencyColor(event.urgency_level) }]}>
+          <Text style={styles.badgeTextSolid}>{event.urgency_level.toUpperCase()}</Text>
+        </View>
+
+        {event.surge_status ? (
+          <View style={[styles.badge, styles.badgeSolid, { backgroundColor: getSurgeColor(event.surge_status) }]}>
+            <Text style={styles.badgeTextSolid}>{event.surge_status.toUpperCase()}</Text>
+          </View>
+        ) : null}
+
+        {event.briefing?.severity ? (
+          <View
+            style={[
+              styles.badge,
+              styles.badgeSolid,
+              { backgroundColor: getBriefingSeverityColor(event.briefing.severity) }
+            ]}
+          >
+            <Text style={styles.badgeTextSolid}>{event.briefing.severity.toUpperCase()}</Text>
+          </View>
+        ) : null}
       </View>
 
       {mediaUrl && !hasVideo ? (
@@ -69,10 +109,6 @@ export function EventCard({ item }: Props) {
           <Text style={styles.videoBadge}>Video attached</Text>
         </View>
       ) : null}
-
-      <View style={[styles.badge, { backgroundColor: getUrgencyColor(event.urgency_level) }]}>
-        <Text style={styles.badgeText}>{event.urgency_level.toUpperCase()}</Text>
-      </View>
 
       <Text style={styles.summary}>
         {event.briefing?.summary ?? latest_report_preview?.text ?? "No summary available yet."}
@@ -87,34 +123,11 @@ export function EventCard({ item }: Props) {
           <Text style={styles.badgeText}>{event.trend}</Text>
         </View>
 
-        {event.surge_status ? (
-          <View
-            style={[
-              styles.badge,
-              event.surge_status === "surging" && { backgroundColor: "#fa541c" },
-              event.surge_status === "stable" && { backgroundColor: "#1677ff" },
-              event.surge_status === "cooling" && { backgroundColor: "#8c8c8c" },
-            ]}
-          >
-            <Text style={styles.badgeText}>{event.surge_status.toUpperCase()}</Text>
+        {event.briefing?.incident_type ? (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{event.briefing.incident_type}</Text>
           </View>
         ) : null}
-
-        {event.briefing?.severity && (
-  <View style={[
-    styles.badge,
-    event.briefing.severity === "critical" && { backgroundColor: "#cf1322" },
-    event.briefing.severity === "high" && { backgroundColor: "#fa541c" },
-    event.briefing.severity === "medium" && { backgroundColor: "#faad14" },
-    event.briefing.severity === "low" && { backgroundColor: "#52c41a" },
-  ]}>
-    <Text style={styles.badgeText}>
-      {event.briefing.severity.toUpperCase()}
-    </Text>
-  </View>
-
-  
-)}
 
         {mediaUrl ? (
           <View style={styles.badge}>
@@ -133,7 +146,7 @@ export function EventCard({ item }: Props) {
         <Text style={styles.footerText}>
           Unique: {event.unique_report_count} · Duplicates: {event.duplicate_report_count}
         </Text>
-        <Text style={styles.footerText}>Rank {event.ranking_score}</Text>
+        <Text style={styles.footerTextStrong}>Rank {event.ranking_score}</Text>
       </View>
     </Pressable>
   );
@@ -144,82 +157,114 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.md,
     marginBottom: spacing.md,
     gap: spacing.sm,
+    ...shadows.card
+  },
+  cardPressed: {
+    opacity: 0.96,
+    transform: [{ scale: 0.995 }]
   },
   headerRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   severityDot: {
     width: 12,
     height: 12,
-    borderRadius: 999,
-    marginTop: 5,
+    borderRadius: radius.pill,
+    marginTop: 6
   },
   headerTextWrap: {
-    flex: 1,
+    flex: 1
   },
   title: {
     color: colors.text,
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: "800",
+    letterSpacing: -0.3
   },
   subtitle: {
     color: colors.textMuted,
-    marginTop: 4,
+    marginTop: 5,
     fontSize: 12,
+    lineHeight: 18
+  },
+  priorityRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs
   },
   thumbnail: {
     width: "100%",
-    height: 180,
-    borderRadius: radius.md,
+    height: 190,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceSoft
   },
   videoBox: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.lg,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   videoBadge: {
     color: colors.textSoft,
     fontWeight: "700",
+    fontSize: 13
   },
   summary: {
     color: colors.textSoft,
-    lineHeight: 20,
+    lineHeight: 22,
+    fontSize: 14
   },
   badgeRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.xs,
+    gap: spacing.xs
   },
   badge: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.badgeNeutral,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderSoft,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: radius.pill
+  },
+  badgeSolid: {
+    borderWidth: 0
   },
   badgeText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "700",
+    color: colors.textSoft,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.2
+  },
+  badgeTextSolid: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.3
   },
   footerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     gap: spacing.sm,
+    paddingTop: 2
   },
   footerText: {
+    color: colors.textDim,
+    fontSize: 12
+  },
+  footerTextStrong: {
     color: colors.textMuted,
     fontSize: 12,
-  },
+    fontWeight: "700"
+  }
 });
