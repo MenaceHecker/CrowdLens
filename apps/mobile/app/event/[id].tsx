@@ -11,7 +11,7 @@ import {
 } from "react-native";
 
 import { getEvent, getEventReports } from "../../src/api/client";
-import { colors, radius, spacing } from "../../src/styles/theme";
+import { colors, radius, spacing, shadows } from "../../src/styles/theme";
 import { Event, Report } from "../../src/types/api";
 
 function formatTimestamp(value: string | null) {
@@ -28,9 +28,9 @@ function getSeverityLabel(severity: number) {
 }
 
 function getSeverityColor(severity: number) {
-  if (severity >= 5) return "#dc2626";
+  if (severity >= 5) return "#ef4444";
   if (severity >= 4) return "#f97316";
-  if (severity >= 3) return "#2563eb";
+  if (severity >= 3) return "#3b82f6";
   return "#14b8a6";
 }
 
@@ -94,35 +94,69 @@ function ReportCard({ report }: { report: Report }) {
 
 export default function EventDetailScreen() {
   const params = useLocalSearchParams();
-  const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const id = typeof rawId === "string" ? rawId.trim() : "";
 
   const [event, setEvent] = useState<Event | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!id || typeof id !== "string") return;
+    if (!id) {
+      setEvent(null);
+      setReports([]);
+      setError("Missing event id");
+      return;
+    }
 
-    const [eventData, reportData] = await Promise.all([
-      getEvent(id),
-      getEventReports(id),
-    ]);
+    setError(null);
 
+    // Load event first. This is the critical request.
+    const eventData = await getEvent(id);
     setEvent(eventData);
-    setReports(reportData);
+
+    // Load reports separately so a reports failure does not make the event vanish.
+    try {
+      const reportData = await getEventReports(id);
+      setReports(reportData);
+    } catch {
+      setReports([]);
+    }
   }, [id]);
 
   useEffect(() => {
-    load()
-      .catch(() => null)
-      .finally(() => setLoading(false));
+    let mounted = true;
+
+    async function run() {
+      try {
+        await load();
+      } catch (err) {
+        if (!mounted) return;
+        setEvent(null);
+        setReports([]);
+        setError(err instanceof Error ? err.message : "Failed to load event");
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    run();
+
+    return () => {
+      mounted = false;
+    };
   }, [load]);
 
   const onRefresh = async () => {
     try {
       setRefreshing(true);
       await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to refresh event");
     } finally {
       setRefreshing(false);
     }
@@ -141,6 +175,7 @@ export default function EventDetailScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.muted}>Event not found.</Text>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </View>
     );
   }
@@ -155,6 +190,7 @@ export default function EventDetailScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      showsVerticalScrollIndicator={false}
     >
       <View style={styles.heroCard}>
         <View style={styles.heroHeader}>
@@ -193,6 +229,8 @@ export default function EventDetailScreen() {
           <EventBadge label={event.status} />
           <EventBadge label={event.trend} />
           <EventBadge label={`severity ${event.severity}`} />
+          {event.urgency_level ? <EventBadge label={event.urgency_level} /> : null}
+          {event.surge_status ? <EventBadge label={event.surge_status} /> : null}
           {event.briefing?.incident_type ? (
             <EventBadge label={event.briefing.incident_type} />
           ) : null}
@@ -239,9 +277,13 @@ export default function EventDetailScreen() {
 
       <View style={styles.reportsSection}>
         <Text style={styles.sectionTitle}>Reports</Text>
-        {reports.map((report) => (
-          <ReportCard key={report.id} report={report} />
-        ))}
+        {reports.length > 0 ? (
+          reports.map((report) => <ReportCard key={report.id} report={report} />)
+        ) : (
+          <View style={styles.emptyReportsCard}>
+            <Text style={styles.muted}>No reports available for this event yet.</Text>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -263,17 +305,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
   muted: {
     color: colors.textMuted,
+    textAlign: "center",
+  },
+  errorText: {
+    color: colors.danger,
+    textAlign: "center",
+    marginTop: spacing.xs,
   },
   heroCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.md,
     gap: spacing.md,
+    ...shadows.card,
   },
   heroHeader: {
     flexDirection: "row",
@@ -301,13 +351,14 @@ const styles = StyleSheet.create({
   heroImage: {
     width: "100%",
     height: 240,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceAlt,
   },
   videoBoxLarge: {
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.lg,
     paddingVertical: spacing.lg,
     alignItems: "center",
     justifyContent: "center",
@@ -323,15 +374,15 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   badge: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.badgeNeutral,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderSoft,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
   },
   badgeText: {
-    color: colors.textMuted,
+    color: colors.textSoft,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -339,9 +390,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.md,
     gap: spacing.md,
+    ...shadows.card,
   },
   sectionTitle: {
     color: colors.text,
@@ -356,11 +408,11 @@ const styles = StyleSheet.create({
   statBox: {
     flexGrow: 1,
     minWidth: "45%",
-    backgroundColor: colors.bg,
-    borderRadius: radius.md,
+    backgroundColor: colors.bgElevated,
+    borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderSoft,
   },
   statValue: {
     color: colors.text,
@@ -375,9 +427,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.md,
     gap: spacing.sm,
+    ...shadows.card,
   },
   actionItem: {
     color: colors.textSoft,
@@ -386,13 +439,22 @@ const styles = StyleSheet.create({
   reportsSection: {
     gap: spacing.md,
   },
+  emptyReportsCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    ...shadows.card,
+  },
   reportCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.md,
     gap: spacing.sm,
+    ...shadows.card,
   },
   reportHeader: {
     flexDirection: "row",
@@ -413,13 +475,14 @@ const styles = StyleSheet.create({
   reportImage: {
     width: "100%",
     height: 220,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceAlt,
   },
   videoBox: {
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.bg,
-    borderRadius: radius.md,
+    backgroundColor: colors.bgElevated,
+    borderRadius: radius.lg,
     paddingVertical: spacing.md,
     alignItems: "center",
     justifyContent: "center",
