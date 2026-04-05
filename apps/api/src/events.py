@@ -130,12 +130,8 @@ def _ranking_score(event: Event) -> float:
     recency_component = max(0.0, 25.0 - min(event.minutes_since_last_report, 25))
     velocity_component = min(event.report_velocity_per_hour, 20.0) * 1.5
 
-    has_media = bool(event.briefing and getattr(event.briefing, "source_stats", None) and event.briefing.source_stats.get("has_media"))
-    event.surge_status, event.surge_score = _derive_surge_status(
-    unique_report_count=event.unique_report_count,
-    minutes_since_last_report=event.minutes_since_last_report,
-    report_velocity_per_hour=event.report_velocity_per_hour,
-    has_media=has_media,)
+    source_stats = getattr(event.briefing, "source_stats", None) if event.briefing else None
+    has_media = bool(getattr(source_stats, "has_media", False))
 
     trend_bonus_map = {
         "new": 4.0,
