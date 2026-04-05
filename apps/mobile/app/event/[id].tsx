@@ -93,7 +93,8 @@ function ReportCard({ report }: { report: Report }) {
 }
 
 export default function EventDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams();
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const [event, setEvent] = useState<Event | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
@@ -101,7 +102,7 @@ export default function EventDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    if (!id) return;
+    if (!id || typeof id !== "string") return;
 
     const [eventData, reportData] = await Promise.all([
       getEvent(id),
