@@ -5,22 +5,18 @@
   "expo": {
     "name": "CrowdLens",
     "slug": "crowdlens",
-
     "icon": "./assets/icon.png",
-
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0B1220"
+      "backgroundColor": "#0b1220"
     },
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B1220"
+        "backgroundColor": "#0b1220"
       }
     },
-
     "ios": {
       "supportsTablet": true
     }
